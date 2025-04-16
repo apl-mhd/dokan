@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.log
+
+# Virtual Environment
+env/
+venv/
+ENV/
+.venv/
+
+# Django specific
+*.sqlite3
+db.sqlite3
+*.log
+*.pot
+*.pyc
+*.mo
+*.pyo
+*.pyd
+media/
+staticfiles/
+static_root/
+node_modules/
+
+# VSCode / JetBrains
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pipenv / poetry
+Pipfile.lock
+poetry.lock
+
+# dotenv
+.env
+.env.*
+
+# migrations (optional)
+**/migrations/*.py
+!**/migrations/__init__.py
+
+# Coverage / testing
+htmlcov/
+.coverage
+.cache
+.pytest_cache/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Celery / Redis / Logs
+celerybeat-schedule
+*.pid
+*.log
