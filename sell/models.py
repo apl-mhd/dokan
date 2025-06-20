@@ -23,7 +23,7 @@ class Sell(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Purchase {self.id} from {self.supplier.name}"
+        return f"Purchase {self.id} from {self.customer.name}"
 
 
 class SellItem(models.Model):

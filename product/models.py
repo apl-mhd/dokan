@@ -5,6 +5,7 @@ from django.db import models
 
 class Unit(models.Model):
     name = models.CharField(max_length=128)
+    unit_value = models.IntegerField(default=1)
     abbreviation = models.CharField(null=True, blank=True, max_length=10)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
