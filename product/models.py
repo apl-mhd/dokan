@@ -11,7 +11,7 @@ class Unit(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.name
+        return f"{self.name} ({self.pk}"
 
 
 class Category(models.Model):
