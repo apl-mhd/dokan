@@ -34,6 +34,7 @@ def create_purchase_with_items(data, user):
         "invoice_date": data.get("invoice_date"),
         "grand_total": grand_total,
         "status": data.get("status", "pending"),
+
     })
 
     purchase_serializer.is_valid(raise_exception=True)
@@ -89,32 +90,3 @@ def update_purchase_with_items(purchase_id, data, user):
     PurchaseItem.objects.bulk_create(items)
 
     return update_serializer
-
-    # items = []
-    # grand_total = Decimal('0.00')
-
-    # for item in data.get('purchase_items', []):
-    #     serializer = PurchaseItemSerializer(data=item)
-    #     serializer.is_valid(raise_exception=True)
-
-    #     quantity = Decimal(item.get('quantity', 0))
-    #     unit_price = Decimal(item.get('unit_price', 0))
-    #     line_total = quantity * unit_price
-    #     grand_total += line_total
-
-    #     items.append(PurchaseItem(
-    #         purchase=purchase,
-    #         product=get_object_or_404(Product, id=item.get('product')),
-    #         unit=get_object_or_404(Unit, id=item.get('unit')),
-    #         quantity=quantity,
-    #         unit_price=unit_price,
-    #         line_total=line_total,
-    #     ))
-
-    # purchase_serializer = PurchaseSerializer(purchase, data=data, partial=True)
-    # purchase_serializer.is_valid(raise_exception=True)
-    # purchase_serializer.save(updated_by=user, grand_total=grand_total)
-
-    # PurchaseItem.objects.bulk_create(items)
-
-    # return purchase

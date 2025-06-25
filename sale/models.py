@@ -1,18 +1,22 @@
 from django.db import models
+
+# Create your models here.
+from django.db import models
+from django.utils.timezone import now
 from customer.models import Customer
 from product.models import Product, Unit
 
 
-class Sell(models.Model):
+class Sale(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
     invoice_number = models.CharField(max_length=128, null=True, blank=True)
-    invoice_date = models.DateField(null=True, blank=True)
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    invoice_date = models.DateField(default=now)
+    grand_total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     created_by = models.ForeignKey(
-        'auth.User', on_delete=models.CASCADE, related_name='sell_created_by')
+        'auth.User', on_delete=models.CASCADE, related_name='sale_created_by')
     updated_by = models.ForeignKey(
-        'auth.User', on_delete=models.CASCADE, related_name='sell_updated_by')
+        'auth.User', on_delete=models.CASCADE, related_name='sale_updated_by', null=True, blank=True)
     status = models.CharField(max_length=20, choices=[
         ('pending', 'Pending'),
         ('delivered', 'Delivered'),
@@ -26,18 +30,15 @@ class Sell(models.Model):
         return f"Purchase {self.id} from {self.customer.name}"
 
 
-class SellItem(models.Model):
-    sell = models.ForeignKey(Sell, on_delete=models.CASCADE)
+class SaleItem(models.Model):
+    sale = models.ForeignKey(
+        Sale, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
     unit = models.ForeignKey(Unit, on_delete=models.CASCADE)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-    total_price = models.DecimalField(max_digits=10, decimal_places=2)
+    sub_total = models.DecimalField(max_digits=10, decimal_places=2)
 
-    created_by = models.ForeignKey(
-        'auth.User', on_delete=models.CASCADE, related_name='sell_item_created_by')
-    updated_by = models.ForeignKey(
-        'auth.User', on_delete=models.CASCADE, related_name='sell_item_updated_by')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

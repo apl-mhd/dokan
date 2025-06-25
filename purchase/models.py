@@ -34,11 +34,6 @@ class PurchaseItem(models.Model):
     unit = models.ForeignKey('product.Unit', on_delete=models.CASCADE)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     line_total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-
-    # created_by = models.ForeignKey(
-    #     'auth.User', on_delete=models.CASCADE, related_name='purchase_item_created_by')
-    # updated_by = models.ForeignKey(
-    #     'auth.User', on_delete=models.CASCADE, related_name='purchase_item_updated_by')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
