@@ -7,8 +7,8 @@ class Purchase(models.Model):
     supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE)
     invoice_number = models.CharField(max_length=128,unique=True, null=True, blank=True)
     invoice_date = models.DateField(default=now)
-    total_amount = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True)
+    grand_total = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00)
 
     created_by = models.ForeignKey(
         'auth.User', on_delete=models.CASCADE, related_name='purchase_created_by')
@@ -28,12 +28,12 @@ class Purchase(models.Model):
 
 
 class PurchaseItem(models.Model):
-    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE)
+    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey('product.Product', on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
     unit = models.ForeignKey('product.Unit', on_delete=models.CASCADE)
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-    total_price = models.DecimalField(max_digits=10, decimal_places=2)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    line_total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     # created_by = models.ForeignKey(
     #     'auth.User', on_delete=models.CASCADE, related_name='purchase_item_created_by')

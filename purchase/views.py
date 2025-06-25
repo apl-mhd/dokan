@@ -1,5 +1,6 @@
 from .models import Purchase, PurchaseItem
 from .serializers import PurchaseSerializer, PurchaseItemSerializer
+from purchase.services.purchase_service import create_purchase_with_items, update_purchase_with_items
 from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -8,7 +9,9 @@ from supplier.models import Supplier
 from product.models import Product, Unit
 from django.shortcuts import get_object_or_404
 from django.db import transaction
+from decimal import Decimal
 import uuid
+from django.db.models import Prefetch
 
 
 # Create your views here.
@@ -17,67 +20,51 @@ class PurchaseAPIView(APIView):
     # permission_classes = [IsAuthenticated]  # Allow any user to access this API
 
     def get(self, request):
-        # Here you can implement your logic to fetch purchase data
 
-        data = {
-            "message": "This is a sample response from the Purchase API."
-        }
-        return Response(data)
+        purchase = Purchase.objects.select_related(
+            'supplier').prefetch_related(Prefetch('items', queryset=PurchaseItem.objects.select_related('product', 'unit'))).all()
+        serializer = PurchaseSerializer(purchase, many=True)
+
+        return Response({"message": "Purchasse Response", "data": serializer.data}, status=200)
 
     def post(self, request):
         data = request.data
 
         try:
             with transaction.atomic():
-                purchase_serializer = PurchaseSerializer(data={
-                    "supplier": data.get("supplier"),
-                    "invoice_number": str(uuid.uuid4()),
-                    "invoice_date": data.get("invoice_date"),
-                    "total_amount": data.get("total_amount"),
-                    "status": data.get("status", "pending"),
-                    "created_by": request.user.id,
-                })
+                purchase = create_purchase_with_items(data, request.user)
+                serailizer = PurchaseSerializer(purchase)
+                return Response({"message": "Purchase created successfully!", "data": serailizer.data}, status=201)
 
-                if not purchase_serializer.is_valid():
-                    return Response(purchase_serializer.errors, status=400)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
 
-                purchase_serializer.save()
+    def put(self, request, pk):
+        data = request.data
+        try:
+            with transaction.atomic():
 
-                purchase_items = data.get("purchase_items", [])
-                items = []
+                purchase = update_purchase_with_items(pk, data, request.user)
+                serializer = PurchaseSerializer(purchase)
 
-                total_amount = 0
+                return Response({"message": "Purchase updated successfully!", "data": serializer.data}, status=200)
 
-                for item in purchase_items:
-                    purchase_item_serializer = PurchaseItemSerializer(
-                        data=item)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
 
-                    if not purchase_item_serializer.is_valid():
-                        return Response(purchase_item_serializer.errors, status=400)
-
-                    item_total_price = item['quantity'] * item['unit_price']
-                    total_amount += item_total_price
-
-
-                    items.append(PurchaseItem(purchase=purchase_serializer.instance,
-                                              product=get_object_or_404(
-                                                  Product, id=item['product']),
-                                              quantity=item['quantity'],
-                                              unit=get_object_or_404(
-                                                  Unit, id=item['unit']),
-                                              unit_price=item['unit_price'],
-                                              total_price=item_total_price,
-                                              ))
-
-                PurchaseItem.objects.bulk_create(items)
-                purchase_serializer.instance.total_amount = total_amount
-                purchase_serializer.instance.save()
-
-            return Response({"message": "Purchase created successfully!"}, status=201)
+    def delete(self, request, pk):
+        try:
+            purchase = get_object_or_404(Purchase, id=pk)
+            purchase.delete()
+            return Response({"message": "Purchase deleted successfully!"}, status=204)
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 
 
 def test(request):
+
+    product = get_object_or_404(Product, id=1)
+    product.update(name='update katari')
+
     return HttpResponse("Purchase app is working fine!")
