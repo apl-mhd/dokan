@@ -4,6 +4,38 @@ from .models import Purchase, PurchaseItem
 from supplier.models import Supplier
 
 
+
+class ItemSerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = PurchaseItem
+        fields = ['product', 'quantity', 'unit', 'unit_price', 'line_total']
+        extra_kwargs = {
+            'unit_price': {'required': True},
+            'line_total': {'required': True},
+        }
+
+    def validate_product(self, attrs):
+        raise serializers.ValidationError("error")
+
+class PurchaseCreateSerializer(serializers.ModelSerializer):
+    items = ItemSerializer(many=True, required=False) 
+    class Meta:
+        model = Purchase
+        fields = ['supplier', 'invoice_date', 'status', 'grand_total', 'notes', "items"]
+
+        extra_kwargs = {
+            'grand_total': {'required': True},
+        }
+
+
+
+class PurchaseItemCreatSerializer(serializers.Serializer):
+
+    purchase = PurchaseCreateSerializer()
+    items = ItemSerializer(many=True)
+
+
 class SupplierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplier
@@ -20,8 +52,10 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['line_total', 'supplier']
 
 
+
+
 class PurchaseSerializer(serializers.ModelSerializer):
-    items = PurchaseItemSerializer(many=True, read_only=True)
+    items = ItemSerializer(many=True)
 
     class Meta:
         model = Purchase
