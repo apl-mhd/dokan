@@ -15,7 +15,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from sale.models import Sale, SaleItem
 from sale.serializers import SaleItemSerializer, SaleSerializer
-from product.serializers import ProductSerializer
+# from product.serializers import ProductSerializer
 from uuid import uuid4
 
 # Create your views here.
