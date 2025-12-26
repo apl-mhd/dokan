@@ -1,10 +1,13 @@
 from decimal import Decimal
 from django.shortcuts import get_object_or_404
 from sale.models import Sale, SaleItem
+from customer.models import Customer
 from sale.serializers import SaleItemSerializer, SaleSerializer
 from product.models import Product, Unit
 from uuid import uuid4
 from customer.models import Customer
+from inventory.models import Stock
+from django.db import transaction
 
 
 def create_sell_with_items(data, user):
@@ -47,3 +50,26 @@ def create_sell_with_items(data, user):
     SaleItem.objects.bulk_create(items)
 
     return sale
+
+
+
+def create_sale_transaction(customer_id, product_id, qty, price):
+
+    with transaction.atomic():
+        customer = get_object_or_404(Customer, id=customer_id)
+        product = get_object_or_404(Product, id=product_id)
+        stock = get_object_or_404(Stock, product=product)
+
+        if stock.quantity < qty:
+            raise ValueError(f"Not enough stock for product {stock.quantity}")
+
+        stock.quantity -= qty
+        stock.save()
+
+        sale_item = SaleItem.objects.create(
+            product=product,
+            quantity=qty,
+            unit_price=price,
+            sub_total=price * qty,
+            sale=sale
+        )

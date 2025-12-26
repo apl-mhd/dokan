@@ -57,17 +57,11 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
    
 
-
-
-
-
 class ProductUnitListAPIView(APIView):
     permission_classes = [permissions.AllowAny]
   
     def get(self, request, product_id):
 
-            # return Response({"message": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
-        
         try:
             product = Product.objects.select_related('unit').get(id=product_id)
         except Product.DoesNotExist:
