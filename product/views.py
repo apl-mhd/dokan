@@ -2,93 +2,211 @@ from django.shortcuts import render
 from rest_framework import viewsets, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .serializers import UnitSerializer, ProductSerializer
+from .serializers import (
+    UnitSerializer,
+    ProductSerializer,
+    UnitCategorySerializer,
+    ProductCreateInputSerializer,
+    ProductUpdateInputSerializer,
+    UnitCreateInputSerializer,
+    UnitUpdateInputSerializer,
+    UnitCategoryCreateInputSerializer,
+    UnitCategoryUpdateInputSerializer
+)
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from .models import Product, Unit, UnitCategory
+from .services.product_service import ProductService, UnitService, UnitCategoryService
+from inventory.models import Stock
 from decimal import Decimal
-# Create your views here.
-
 
 
 class ProductAPIView(APIView):
     permission_classes = [permissions.AllowAny]
-    
-    def get(self, request, product_id):
 
-        products = Product.objects.select_related('base_unit__unit_category').prefetch_related('stocks').all()
-        data = []
+    def get(self, request, product_id=None):
+        """
+        Get a single product by ID or list all products with units and stocks
+        """
+        if product_id is not None:
+            try:
+                product = ProductService.get_product(product_id)
+                serializer = ProductSerializer(product)
+                return Response({
+                    "message": "Product retrieved successfully",
+                    "data": serializer.data
+                }, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response({
+                    "error": "Product not found",
+                    "details": str(e)
+                }, status=status.HTTP_404_NOT_FOUND)
+        else:
+            products = ProductService.get_all_products()
+            data = []
 
-        for product in products:
-            unit = Unit.objects.filter(unit_category=product.base_unit.unit_category)
+            for product in products:
+                units = []
+                if product.base_unit and product.base_unit.unit_category:
+                    units = UnitService.get_all_units().filter(
+                        unit_category=product.base_unit.unit_category
+                    )
 
-            print(product.stocks.first().quantity)
-            unit_list = [
-                {
-                "id": i.id,
-                "name": i.name,
-                "conversion_factor": str(i.conversion_factor),
+                unit_list = [
+                    {
+                        "id": unit.id,
+                        "name": unit.name,
+                        "conversion_factor": str(unit.conversion_factor),
+                        "is_base_unit": unit.is_base_unit,
+                    }
+                    for unit in units
+                ]
+
+                # Get stock quantity (sum of all warehouse stocks)
+                stocks = product.stocks.all()
+                total_stock = sum(
+                    stock.quantity for stock in stocks) if stocks else Decimal('0.00')
+
+                product_data = {
+                    "id": product.id,
+                    "name": product.name,
+                    "description": product.description,
+                    "category": {
+                        "id": product.category.id,
+                        "name": product.category.name,
+                    },
+                    "base_unit": {
+                        "id": product.base_unit.id,
+                        "name": product.base_unit.name,
+                        "conversion_factor": str(product.base_unit.conversion_factor),
+                    } if product.base_unit else None,
+                    "units": unit_list,
+                    "total_stock": str(total_stock),
                 }
-                for i in unit
-            ]
+                data.append(product_data)
 
-            data.append({
-                "id": product.id,
-                "name": product.name,
-                "base_unit": {
-                    "id": product.base_unit.id,
-                    "name": product.base_unit.name,
-                    "conversion_factor": str(product.base_unit.conversion_factor),
-                },
-                "units": unit_list,
-                "stocks": product.stocks.first().quantity,
-            })
+            return Response({
+                "message": "Products retrieved successfully",
+                "data": data
+            }, status=status.HTTP_200_OK)
 
-        return Response(data)
-        
+    def post(self, request):
+        """
+        Create a new product
+        """
+        serializer = ProductCreateInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
+        try:
+            product = ProductService.create_product(serializer.validated_data)
+            response_serializer = ProductSerializer(product)
+            return Response({
+                "message": "Product created successfully",
+                "data": response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response({
+                "error": "Validation error",
+                "details": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                "error": "Error creating product",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class UnitModelSerializer(viewsets.ModelViewSet):
-    queryset = UnitSerializer
-    serializer_class = UnitSerializer
+    def put(self, request, product_id):
+        """
+        Update an existing product
+        """
+        serializer = ProductUpdateInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            product = ProductService.update_product(
+                product_id, serializer.validated_data)
+            response_serializer = ProductSerializer(product)
+            return Response({
+                "message": "Product updated successfully",
+                "data": response_serializer.data
+            }, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            return Response({
+                "error": "Validation error",
+                "details": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                "error": "Error updating product",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def delete(self, request, product_id):
+        """
+        Delete a product
+        """
+        try:
+            ProductService.delete_product(product_id)
+            return Response({
+                "message": "Product deleted successfully"
+            }, status=status.HTTP_204_NO_CONTENT)
+        except ValidationError as e:
+            return Response({
+                "error": "Error deleting product",
+                "details": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
-   
+    permission_classes = [permissions.AllowAny]
+
+
+class UnitViewSet(viewsets.ModelViewSet):
+    queryset = Unit.objects.all()
+    serializer_class = UnitSerializer
+    permission_classes = [permissions.AllowAny]
+
 
 class ProductUnitListAPIView(APIView):
     permission_classes = [permissions.AllowAny]
-  
+
     def get(self, request, product_id):
-
+        """
+        Get all units available for a product based on its base unit category
+        """
         try:
-            product = Product.objects.select_related('unit').get(id=product_id)
-        except Product.DoesNotExist:
-            return Response({
-                'error': 'Product not found'
-            }, status=status.HTTP_404_NOT_FOUND)
-
-        unit = Unit.objects.filter(unit_category=product.unit.unit_category)
-
-        data =[
-            {"id": i.id, "name": i.name, "conversion_factor": str(i.conversion_factor), "is_base_unit": i.is_base_unit}
-            
-            for i in unit
+            units = ProductService.get_product_units(product_id)
+            data = [
+                {
+                    "id": unit.id,
+                    "name": unit.name,
+                    "conversion_factor": str(unit.conversion_factor),
+                    "is_base_unit": unit.is_base_unit
+                }
+                for unit in units
             ]
 
-
-        
-        return Response({
-            "data": data,
-        })
-        
+            return Response({
+                "message": "Product units retrieved successfully",
+                "data": data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "error": "Product not found",
+                "details": str(e)
+            }, status=status.HTTP_404_NOT_FOUND)
 
 
 class StockCheckAPIView(APIView):
     permission_classes = [permissions.AllowAny]
 
-    def get(self, request, product_id):
+    def get(self, request):
+        """
+        Check stock availability for a product in a specific unit and warehouse
+        Query params: product_id, unit_id, quantity, warehouse_id
+        """
         product_id = request.query_params.get('product_id')
         unit_id = request.query_params.get('unit_id')
         quantity = request.query_params.get('quantity')
@@ -96,25 +214,22 @@ class StockCheckAPIView(APIView):
 
         if not all([product_id, unit_id, quantity, warehouse_id]):
             return Response({
-                'error': 'All parameters are required'
+                'error': 'All parameters are required: product_id, unit_id, quantity, warehouse_id'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        quantity = Decimal(quantity)
-
-        unit = Unit.objects.get(id=unit_id)
-        required_base_qt = quantity * unit.conversion_factor
-
-        stock  = Stock.objects.filter(product_id=product_id, warehouse_id=warehouse_id).first()
-
-        available_stock = stock.quantity if stock else 0
-
-
-        is_available = available_stock >= required_base_qty
-
-        return Response({
-            "is_available": is_available,
-            "required_quantity": str(required_base_qty),
-            "available_stock": str(available_stock),
-            "base_unit": unit.unit_category.base_unit.name
-        })
-        
+        try:
+            result = ProductService.check_stock_availability(
+                product_id=product_id,
+                unit_id=unit_id,
+                quantity=quantity,
+                warehouse_id=warehouse_id
+            )
+            return Response({
+                "message": "Stock check completed",
+                "data": result
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "error": "Error checking stock",
+                "details": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)

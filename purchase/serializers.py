@@ -1,39 +1,72 @@
 from rest_framework import serializers
-from decimal import Decimal
-from .models import Purchase, PurchaseItem
+from .models import Purchase, PurchaseItem, PurchaseStatus
 from supplier.models import Supplier
 
 
-
 class ItemSerializer(serializers.ModelSerializer):
-    
+    """Serializer for purchase items in output (read-only)"""
     class Meta:
         model = PurchaseItem
         fields = ['product', 'quantity', 'unit', 'unit_price', 'line_total']
-        extra_kwargs = {
-            'unit_price': {'required': True},
-            'line_total': {'required': True},
-        }
-
-    def validate_product(self, attrs):
-        raise serializers.ValidationError("error")
-
-class PurchaseCreateSerializer(serializers.ModelSerializer):
-    items = ItemSerializer(many=True, required=False) 
-    class Meta:
-        model = Purchase
-        fields = ['supplier', 'invoice_date', 'status', 'grand_total', 'notes', "items"]
-
-        extra_kwargs = {
-            'grand_total': {'required': True},
-        }
+        read_only_fields = ['line_total']
 
 
+class PurchaseItemInputSerializer(serializers.Serializer):
+    """Serializer for purchase item input (used in create/update operations)"""
+    product = serializers.IntegerField(required=True)
+    quantity = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=True)
+    unit = serializers.IntegerField(required=True)
+    unit_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=True)
 
-class PurchaseItemCreatSerializer(serializers.Serializer):
+    def validate_quantity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Quantity must be greater than zero.")
+        return value
 
-    purchase = PurchaseCreateSerializer()
-    items = ItemSerializer(many=True)
+    def validate_unit_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Unit price cannot be negative.")
+        return value
+
+
+class PurchaseCreateInputSerializer(serializers.Serializer):
+    """Serializer for creating a purchase"""
+    supplier = serializers.IntegerField(required=True)
+    warehouse = serializers.IntegerField(required=True)
+    items = PurchaseItemInputSerializer(many=True, required=True)
+    status = serializers.ChoiceField(
+        choices=PurchaseStatus.choices,
+        default=PurchaseStatus.PENDING,
+        required=False
+    )
+    notes = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True)
+    invoice_date = serializers.DateField(required=False)
+
+    def validate_items(self, value):
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one item is required.")
+        return value
+
+
+class PurchaseUpdateInputSerializer(serializers.Serializer):
+    """Serializer for updating a purchase"""
+    id = serializers.IntegerField(required=True)
+    items = PurchaseItemInputSerializer(many=True, required=True)
+    status = serializers.ChoiceField(
+        choices=PurchaseStatus.choices,
+        required=False
+    )
+    notes = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True)
+
+    def validate_items(self, value):
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one item is required.")
+        return value
 
 
 class SupplierSerializer(serializers.ModelSerializer):
@@ -52,66 +85,12 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['line_total', 'supplier']
 
 
-
-
 class PurchaseSerializer(serializers.ModelSerializer):
-    items = ItemSerializer(many=True)
+    """Serializer for purchase output (read operations)"""
+    items = ItemSerializer(many=True, read_only=True)
 
     class Meta:
         model = Purchase
         fields = '__all__'
         read_only_fields = ['grand_total',
                             'created_by', 'created_at', 'updated_at']
-
-
-# class PurchaseItemSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = PurchaseItem
-#         fields = '__all__'
-#         exclude = ['purchase']
-#         read_only_fields = ['line_total']
-
-
-# class PurchaseSerializer(serializers.ModelSerializer):
-#     items = PurchaseItemSerializer(many=True, read_only=True)
-
-#     class Meta:
-#         model = Purchase
-#         fields = '__all__'
-#         # exclude = ['items']
-#         read_only_fields = ['grand_total',
-#                             'created_by', 'created_at', 'updated_at']
-
-#     def create(self, validated_data):
-#         purchase_items_data = validated_data.pop('items', [])
-#         grand_total = Decimal('0.00')
-#         user = self.context['request'].user
-#         print(user)
-#         # user = self.context.get('request').user
-#         # print(self.context.get('request'))
-#         # print(self.context)
-
-#         items = []
-#         for item in purchase_items_data:
-#             quantity = Decimal(item.get('quantity', 0))
-#             price = Decimal(item.get('price', 0))
-#             line_total = quantity * price
-#             grand_total += line_total
-
-#             items.append(PurchaseItem(
-#                 product=item.get('product'),
-#                 quantity=quantity,
-#                 unit_price=price,
-#                 unit=item.get('unit'),
-#                 line_total=quantity * price
-#             ))
-#         validated_data['grand_total'] = grand_total
-
-#         purchase = Purchase.objects.create(
-#             **validated_data, created_by=user)
-
-#         for item in items:
-#             item.purchase = purchase
-#         PurchaseItem.objects.bulk_create(items)
-
-#         return purchase
