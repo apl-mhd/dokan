@@ -1,4 +1,5 @@
 from .models import Purchase, PurchaseItem
+from product.models import Unit
 from .serializers import PurchaseSerializer, PurchaseItemCreatSerializer, PurchaseCreateSerializer, ItemSerializer
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -10,9 +11,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status, viewsets, filters
+from rest_framework.exceptions import ValidationError
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth.models import User
-
+from django.db import transaction, IntegrityError
+import uuid
+from .services.purchase_service import PurchaseService
 import django_filters 
 
 # Create your views here.
@@ -40,6 +44,38 @@ class PurchaseViewSet(viewsets.ModelViewSet):
 
 
 class PurchaseAPIView(APIView):
+    def get(self, request):
+        purchase = Purchase.objects.all()
+        serializer = PurchaseSerializer(purchase, many=True)
+        return Response({"message": "Purchase API", "data": serializer.data}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        data = request.data
+
+        user = User.objects.first()
+
+        try:
+            purchase = PurchaseService.create_purchase(data, user)
+            return Response({"message": "Purchase Create successfully"}, status=status.HTTP_201_CREATED)
+        
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        except IntegrityError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)  
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def put(self, request):
+        return Response({"message": "Purchase API"}, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        return Response({"message": "Purchase API"}, status=status.HTTP_200_OK)
+
+
+
+class _PurchaseAPIView(APIView):
     # permission_classes = [IsAuthenticated]  # Allow any user to access this API
 
     def get(self, request):

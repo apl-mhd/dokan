@@ -11,6 +11,6 @@ urlpatterns = [
     # path('', views.PurchaseAPIView.as_view(), name='purchase'),
     # path('<int:pk>/', views.PurchaseAPIView.as_view(), name='purchase'),
     path('test', views.test, name='test'),
-    path('', include(router.urls)),
+    path('', views.PurchaseAPIView.as_view(), name='purchase'),
 ] 
 

@@ -24,7 +24,7 @@ class StockDirection(models.TextChoices):
 class Stock(models.Model):
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="stocks")
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT)
-    quantity = models.DecimalField(max_digits=10, decimal_places=4)
+    quantity = models.DecimalField(max_digits=10, decimal_places=4, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
