@@ -5,15 +5,17 @@ from .views import (
     ProductViewSet,
     ProductAPIView,
     UnitViewSet,
-    StockCheckAPIView
+    StockCheckAPIView,
+    TestApi
 )
 
-router = routers.DefaultRouter()
-router.register(r'', ProductViewSet, basename='product')
-router.register(r'units', UnitViewSet, basename='unit')
+# router = routers.DefaultRouter()
+# router.register(r'', ProductViewSet, basename='product')
+# router.register(r'units', UnitViewSet, basename='unit')
 
 urlpatterns = [
-    path('', include(router.urls)),
+    path('test/', TestApi.as_view(), name='test-api'),
+  #  path('', include(router.urls)),
     path('list/', ProductAPIView.as_view(), name='product-list'),
     path('<int:product_id>/', ProductAPIView.as_view(), name='product-detail'),
     path('<int:product_id>/units/',

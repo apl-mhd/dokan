@@ -233,3 +233,14 @@ class StockCheckAPIView(APIView):
                 "error": "Error checking stock",
                 "details": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class TestApi(APIView):
+    def get(self, request):
+
+        unit_category = UnitCategory.objects.first()
+        print(unit_category.get_base_unit().name)
+        return Response({
+            "message": "Test API"
+        }, status=status.HTTP_200_OK)
