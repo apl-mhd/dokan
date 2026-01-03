@@ -2,6 +2,7 @@ from django.db import models
 from supplier.models import Supplier
 from django.utils.timezone import now
 from warehouse.models import Warehouse
+from company.models import Company
 
 
 class PurchaseStatus(models.TextChoices):
@@ -12,6 +13,7 @@ class PurchaseStatus(models.TextChoices):
 
 class Purchase(models.Model):
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT)
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='purchases')
     invoice_number = models.CharField(max_length=128, unique=True, blank=True)
     invoice_date = models.DateField(default=now)
     sub_total = models.DecimalField(
@@ -57,6 +59,7 @@ class Purchase(models.Model):
 
 class PurchaseItem(models.Model):
     purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name='items')
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='purchase_items')
     product = models.ForeignKey('product.Product', on_delete=models.PROTECT)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     unit = models.ForeignKey('product.Unit', on_delete=models.PROTECT)

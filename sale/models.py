@@ -5,10 +5,12 @@ from django.db import models
 from django.utils.timezone import now
 from customer.models import Customer
 from product.models import Product, Unit
+from company.models import Company
 
 
 class Sale(models.Model):
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='sales')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales')
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='sales')
     invoice_number = models.CharField(max_length=128, null=True, blank=True)
     invoice_date = models.DateField(default=now)
     grand_total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -33,6 +35,7 @@ class Sale(models.Model):
 class SaleItem(models.Model):
     sale = models.ForeignKey(
         Sale, on_delete=models.CASCADE, related_name='items')
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='sale_items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
     unit = models.ForeignKey(Unit, on_delete=models.CASCADE)
