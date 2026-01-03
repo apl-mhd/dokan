@@ -26,30 +26,33 @@ class PurchaseService:
         if 'supplier' in kwargs:
             supplier = kwargs['supplier']
             if supplier.company != company:
-                raise ValidationError("Supplier does not belong to your company.")
-        
+                raise ValidationError(
+                    "Supplier does not belong to your company.")
+
         if 'warehouse' in kwargs:
             warehouse = kwargs['warehouse']
             if warehouse.company != company:
-                raise ValidationError("Warehouse does not belong to your company.")
-        
+                raise ValidationError(
+                    "Warehouse does not belong to your company.")
+
         if 'purchase' in kwargs:
             purchase = kwargs['purchase']
             if purchase.company != company:
-                raise ValidationError("Purchase does not belong to your company.")
+                raise ValidationError(
+                    "Purchase does not belong to your company.")
 
     @staticmethod
     def _update_stock(product, warehouse, company, quantity, operation='add'):
         """
         Update stock quantity for a product in a warehouse for a specific company.
-        
+
         Args:
             product: Product instance
             warehouse: Warehouse instance
             company: Company instance
             quantity: Decimal quantity to add or subtract
             operation: 'add' or 'subtract'
-        
+
         Returns:
             Stock instance
         """
@@ -59,7 +62,7 @@ class PurchaseService:
             company=company,
             defaults={'quantity': Decimal('0.00')}
         )
-        
+
         if operation == 'add':
             stock.quantity += quantity
         elif operation == 'subtract':
@@ -67,25 +70,26 @@ class PurchaseService:
             # Ensure stock doesn't go negative
             if stock.quantity < 0:
                 stock.quantity = Decimal('0.00')
-        
+
         stock.save(update_fields=["quantity"])
         return stock
 
     @staticmethod
-    def _create_stock_transaction(product, stock, company, quantity, direction, transaction_type, reference_id, note=None):
+    def _create_stock_transaction(product, stock, unit, company, quantity, direction, transaction_type, reference_id, note=None):
         """
         Create a stock transaction record.
-        
+
         Args:
             product: Product instance
             stock: Stock instance
+            unit: Unit instance
             company: Company instance
             quantity: Decimal quantity
             direction: StockDirection.IN or StockDirection.OUT
             transaction_type: TransactionType enum value
             reference_id: ID of the related purchase/sale
             note: Optional note string
-        
+
         Returns:
             StockTransaction instance
         """
@@ -93,10 +97,12 @@ class PurchaseService:
             product=product,
             quantity=quantity,
             stock=stock,
+            unit=unit,
             company=company,
             direction=direction,
             transaction_type=transaction_type,
             reference_id=reference_id,
+            balance_after=stock.quantity,
             note=note,
         )
         return stock_transaction
@@ -106,7 +112,7 @@ class PurchaseService:
         """
         Revert stock for old purchase items (subtract quantities).
         Used when updating a purchase.
-        
+
         Args:
             purchase: Purchase instance
             old_items: QuerySet of old PurchaseItem instances
@@ -121,6 +127,7 @@ class PurchaseService:
                 PurchaseService._create_stock_transaction(
                     product=old_item.product,
                     stock=stock,
+                    unit=old_item.unit,
                     company=company,
                     quantity=old_item.quantity,
                     direction=StockDirection.OUT,
@@ -133,20 +140,20 @@ class PurchaseService:
     def _process_purchase_items(purchase, items, warehouse, company, is_update=False):
         """
         Process purchase items and update stock accordingly.
-        
+
         Args:
             purchase: Purchase instance
             items: List of item dictionaries
             warehouse: Warehouse instance
             company: Company instance
             is_update: Boolean indicating if this is an update operation
-        
+
         Returns:
             tuple: (purchase_items list, grand_total Decimal)
         """
         grand_total = Decimal('0.00')
         purchase_items = []
-        
+
         for item in items:
             product = get_object_or_404(Product, id=item['product'])
             unit = get_object_or_404(Unit, id=item['unit'])
@@ -178,6 +185,7 @@ class PurchaseService:
                 PurchaseService._create_stock_transaction(
                     product=product,
                     stock=stock,
+                    unit=unit,
                     company=company,
                     quantity=quantity,
                     direction=StockDirection.IN,
@@ -193,12 +201,12 @@ class PurchaseService:
         """
         Update an existing purchase.
         Company-aware: ensures user can only update purchases from their company.
-        
+
         Args:
             data: Dictionary containing purchase data
             user: User instance
             company: Company instance from request
-        
+
         Returns:
             Purchase instance
         """
@@ -207,7 +215,8 @@ class PurchaseService:
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
-        purchase = get_object_or_404(Purchase.objects.filter(company=company), id=validated_data.get("id"))
+        purchase = get_object_or_404(Purchase.objects.filter(
+            company=company), id=validated_data.get("id"))
         items = validated_data.get("items")
 
         # Validate company access
@@ -220,10 +229,12 @@ class PurchaseService:
                 warehouse = purchase.warehouse
 
                 # Validate warehouse belongs to company
-                PurchaseService._validate_company_access(company, warehouse=warehouse)
+                PurchaseService._validate_company_access(
+                    company, warehouse=warehouse)
 
                 # Revert stock for old items first
-                PurchaseService._revert_old_items_stock(purchase, old_items, warehouse, company)
+                PurchaseService._revert_old_items_stock(
+                    purchase, old_items, warehouse, company)
 
                 # Delete existing items
                 purchase.items.all().delete()
@@ -259,12 +270,12 @@ class PurchaseService:
         """
         Create a new purchase.
         Company-aware: automatically sets company and validates all related objects.
-        
+
         Args:
             data: Dictionary containing purchase data
             user: User instance
             company: Company instance from request
-        
+
         Returns:
             Purchase instance
         """
@@ -273,18 +284,22 @@ class PurchaseService:
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
-        warehouse = get_object_or_404(Warehouse.objects.filter(company=company), id=validated_data.get("warehouse"))
-        supplier = get_object_or_404(Supplier.objects.filter(company=company), id=validated_data.get("supplier"))
+        warehouse = get_object_or_404(Warehouse.objects.filter(
+            company=company), id=validated_data.get("warehouse"))
+        supplier = get_object_or_404(Supplier.objects.filter(
+            company=company), id=validated_data.get("supplier"))
         items = validated_data.get("items")
 
         # Validate company access for all related objects
-        PurchaseService._validate_company_access(company, supplier=supplier, warehouse=warehouse)
+        PurchaseService._validate_company_access(
+            company, supplier=supplier, warehouse=warehouse)
 
         try:
             with transaction.atomic():
                 purchase = Purchase.objects.create(
                     invoice_number=str(uuid4()),
-                    status=validated_data.get("status", PurchaseStatus.PENDING),
+                    status=validated_data.get(
+                        "status", PurchaseStatus.PENDING),
                     created_by=user,
                     warehouse=warehouse,
                     supplier=supplier,

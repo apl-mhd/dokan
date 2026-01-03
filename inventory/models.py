@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from product.models import Product
 from warehouse.models import Warehouse
 from company.models import Company
+from product.models import Unit
 
 
 class TransactionType(models.TextChoices):
@@ -22,9 +23,12 @@ class StockDirection(models.TextChoices):
 
 
 class Stock(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="stocks")
-    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="stocks")
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="stocks")
+    product = models.ForeignKey(
+        Product, on_delete=models.PROTECT, related_name="stocks")
+    warehouse = models.ForeignKey(
+        Warehouse, on_delete=models.PROTECT, related_name="stocks")
+    company = models.ForeignKey(
+        Company, on_delete=models.PROTECT, related_name="stocks")
     quantity = models.DecimalField(max_digits=10, decimal_places=4, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -47,12 +51,23 @@ class Stock(models.Model):
 
 
 class StockTransaction(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="stock_transactions")
-    stock = models.ForeignKey(Stock, on_delete=models.PROTECT, related_name="transactions")
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name="stock_transactions")
+    product = models.ForeignKey(
+        Product, on_delete=models.PROTECT, related_name="stock_transactions")
+    stock = models.ForeignKey(
+        Stock, on_delete=models.PROTECT, related_name="transactions")
+    unit = models.ForeignKey(
+        Unit, on_delete=models.PROTECT, related_name="stock_transactions")
+    company = models.ForeignKey(
+        Company, on_delete=models.PROTECT, related_name="stock_transactions")
     quantity = models.DecimalField(max_digits=10, decimal_places=4)
     direction = models.CharField(max_length=10, choices=StockDirection.choices)
-    transaction_type = models.CharField(max_length=30, choices=TransactionType.choices)
+    balance_after = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        help_text="Stock balance after this transaction"
+    )
+    transaction_type = models.CharField(
+        max_length=30, choices=TransactionType.choices)
     reference_id = models.PositiveIntegerField()
     note = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
