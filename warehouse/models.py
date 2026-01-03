@@ -1,11 +1,10 @@
 from django.db import models
-
-# Create your models here.
-
+from company.models import Company
 
 
 class Warehouse(models.Model):
     name = models.CharField(max_length=20)
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='warehouses')
     location = models.CharField(max_length=50)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -7,8 +7,8 @@ class ItemSerializer(serializers.ModelSerializer):
     """Serializer for purchase items in output (read-only)"""
     class Meta:
         model = PurchaseItem
-        fields = ['product', 'quantity', 'unit', 'unit_price', 'line_total']
-        read_only_fields = ['line_total']
+        fields = ['id', 'product', 'quantity', 'unit', 'unit_price', 'line_total', 'created_at']
+        read_only_fields = ['line_total', 'created_at']
 
 
 class PurchaseItemInputSerializer(serializers.Serializer):
@@ -88,9 +88,11 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
 class PurchaseSerializer(serializers.ModelSerializer):
     """Serializer for purchase output (read operations)"""
     items = ItemSerializer(many=True, read_only=True)
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    warehouse_name = serializers.CharField(source='warehouse.name', read_only=True)
+    company_name = serializers.CharField(source='company.name', read_only=True)
 
     class Meta:
         model = Purchase
         fields = '__all__'
-        read_only_fields = ['grand_total',
-                            'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['grand_total', 'company', 'created_by', 'created_at', 'updated_at']
