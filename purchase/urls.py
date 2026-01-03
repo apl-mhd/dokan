@@ -1,14 +1,11 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from django.urls import path
 from . import views
 
-router = DefaultRouter()
-router.register(r'', views.PurchaseViewSet, basename='purchase')
-
 urlpatterns = [
-    path('test', views.test, name='test'),
-    path('', views.PurchaseAPIView.as_view(), name='purchase-list'),
+    # Test endpoint
+    path('test/', views.test, name='purchase-test'),
+    
+    # Company-aware Purchase CRUD endpoints
+    path('', views.PurchaseAPIView.as_view(), name='purchase-list-create'),
     path('<int:pk>/', views.PurchaseAPIView.as_view(), name='purchase-detail'),
-    path('viewset/', include(router.urls)),
-] 
-
+]
