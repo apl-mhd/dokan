@@ -41,23 +41,28 @@ class SaleService:
                 raise ValidationError("Sale does not belong to your company.")
 
     @staticmethod
-    def _update_stock(product, warehouse, company, quantity, operation='subtract'):
+    def _update_stock(product, warehouse, company, quantity, unit, operation='subtract'):
         """
         Update stock quantity for a product in a warehouse for a specific company.
+        IMPORTANT: Converts quantity to base unit before storing.
 
         Args:
             product: Product instance
             warehouse: Warehouse instance
             company: Company instance
-            quantity: Decimal quantity to add or subtract
+            quantity: Decimal quantity in the given unit
+            unit: Unit instance for the quantity
             operation: 'add' or 'subtract'
 
         Returns:
-            Stock instance
+            tuple: (Stock instance, base_unit_quantity)
 
         Raises:
             ValidationError: If stock is insufficient for subtract operation
         """
+        # Convert quantity to base unit
+        base_unit_quantity = unit.convert_to_base_unit(quantity)
+        
         stock, _ = Stock.objects.get_or_create(
             product=product,
             warehouse=warehouse,
@@ -66,29 +71,34 @@ class SaleService:
         )
 
         if operation == 'subtract':
-            if stock.quantity < quantity:
+            if stock.quantity < base_unit_quantity:
+                # Get base unit name for better error message
+                base_unit_name = product.base_unit.name if product.base_unit else "base units"
                 raise ValidationError(
                     f"Insufficient stock for {product.name}. "
-                    f"Available: {stock.quantity}, Requested: {quantity}"
+                    f"Available: {stock.quantity} {base_unit_name}, "
+                    f"Requested: {quantity} {unit.name} ({base_unit_quantity} {base_unit_name})"
                 )
-            stock.quantity -= quantity
+            stock.quantity -= base_unit_quantity
         elif operation == 'add':
-            stock.quantity += quantity
+            stock.quantity += base_unit_quantity
 
         stock.save(update_fields=["quantity"])
-        return stock
+        return stock, base_unit_quantity
 
     @staticmethod
-    def _create_stock_transaction(product, stock, unit, company, quantity, direction, transaction_type, reference_id, note=None):
+    def _create_stock_transaction(product, stock, unit, company, original_quantity, base_unit_quantity, direction, transaction_type, reference_id, note=None):
         """
         Create a stock transaction record.
+        Records ORIGINAL quantity in transaction for audit trail.
 
         Args:
             product: Product instance
             stock: Stock instance
-            unit: Unit instance
+            unit: Unit instance (the unit used in the transaction)
             company: Company instance
-            quantity: Decimal quantity
+            original_quantity: Decimal quantity in original unit (for audit)
+            base_unit_quantity: Decimal quantity in base unit (used for stock)
             direction: StockDirection.IN or StockDirection.OUT
             transaction_type: TransactionType enum value
             reference_id: ID of the related purchase/sale
@@ -99,15 +109,15 @@ class SaleService:
         """
         stock_transaction = StockTransaction.objects.create(
             product=product,
-            quantity=quantity,
+            quantity=base_unit_quantity,  # Store in base unit for consistency
             stock=stock,
-            unit=unit,
+            unit=unit,  # Keep original unit for reference
             company=company,
             direction=direction,
             transaction_type=transaction_type,
             reference_id=reference_id,
             balance_after=stock.quantity,
-            note=note,
+            note=note or f"Original: {original_quantity} {unit.name} = {base_unit_quantity} base units",
         )
         return stock_transaction
 
@@ -116,6 +126,7 @@ class SaleService:
         """
         Revert stock for old sale items (add quantities back).
         Used when updating a sale.
+        IMPORTANT: Converts to base unit before adding.
 
         Args:
             sale: Sale instance
@@ -125,25 +136,30 @@ class SaleService:
         """
         for old_item in old_items:
             if old_item.quantity > 0:
-                stock = SaleService._update_stock(
-                    old_item.product, warehouse, company, old_item.quantity, operation='add'
+                stock, base_qty = SaleService._update_stock(
+                    old_item.product, warehouse, company, old_item.quantity, old_item.unit, operation='add'
                 )
                 SaleService._create_stock_transaction(
                     product=old_item.product,
                     stock=stock,
                     unit=old_item.unit,
                     company=company,
-                    quantity=old_item.quantity,
+                    original_quantity=old_item.quantity,
+                    base_unit_quantity=base_qty,
                     direction=StockDirection.IN,
                     transaction_type=TransactionType.SALE_RETURN,
                     reference_id=sale.id,
-                    note=f"Sale update - reverted {old_item.quantity} from {sale.invoice_number}",
+                    note=f"Sale update - reverted {old_item.quantity} {old_item.unit.name} ({base_qty} base units) from {sale.invoice_number}",
                 )
 
     @staticmethod
     def _process_sale_items(sale, items, warehouse, company, is_update=False):
         """
         Process sale items and update stock accordingly.
+        IMPORTANT: Converts all quantities to base unit before deducting from stock.
+        
+        Example: If user sells 50kg * 2 (quantity=50, unit=kg, with conversion_factor=1.0)
+                 Stock will be reduced by 100kg in base unit.
 
         Args:
             sale: Sale instance
@@ -176,22 +192,23 @@ class SaleService:
                 line_total=line_total,
             ))
 
-            # Update stock for new items (deduct from stock)
+            # Update stock for new items (deduct from stock) - CONVERTED TO BASE UNIT
             if quantity > 0:
-                stock = SaleService._update_stock(
-                    product, warehouse, company, quantity, operation='subtract'
+                stock, base_unit_quantity = SaleService._update_stock(
+                    product, warehouse, company, quantity, unit, operation='subtract'
                 )
                 transaction_note = (
-                    f"Sale update - deducted {quantity} from {sale.invoice_number}"
+                    f"Sale update - deducted {quantity} {unit.name} ({base_unit_quantity} base units) from {sale.invoice_number}"
                     if is_update
-                    else f"Sale {sale.invoice_number}"
+                    else f"Sale {sale.invoice_number} - {quantity} {unit.name} = {base_unit_quantity} base units"
                 )
                 SaleService._create_stock_transaction(
                     product=product,
                     stock=stock,
                     unit=unit,
                     company=company,
-                    quantity=quantity,
+                    original_quantity=quantity,
+                    base_unit_quantity=base_unit_quantity,
                     direction=StockDirection.OUT,
                     transaction_type=TransactionType.SALE,
                     reference_id=sale.id,
