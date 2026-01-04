@@ -2,11 +2,22 @@ from product.models import Product, Unit, UnitCategory, Category
 from rest_framework import serializers
 
 
+class CategorySerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    
+    class Meta:
+        model = Category
+        fields = '__all__'
+        read_only_fields = ['company', 'created_at', 'updated_at']
+
+
 class UnitCategorySerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    
     class Meta:
         model = UnitCategory
         fields = '__all__'
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['company', 'created_at', 'updated_at']
 
 
 class UnitSerializer(serializers.ModelSerializer):

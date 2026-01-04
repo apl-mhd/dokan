@@ -42,20 +42,25 @@ class PurchaseService:
                     "Purchase does not belong to your company.")
 
     @staticmethod
-    def _update_stock(product, warehouse, company, quantity, operation='add'):
+    def _update_stock(product, warehouse, company, quantity, unit, operation='add'):
         """
         Update stock quantity for a product in a warehouse for a specific company.
+        IMPORTANT: Converts quantity to base unit before storing.
 
         Args:
             product: Product instance
             warehouse: Warehouse instance
             company: Company instance
-            quantity: Decimal quantity to add or subtract
+            quantity: Decimal quantity in the given unit
+            unit: Unit instance for the quantity
             operation: 'add' or 'subtract'
 
         Returns:
-            Stock instance
+            tuple: (Stock instance, base_unit_quantity)
         """
+        # Convert quantity to base unit
+        base_unit_quantity = unit.convert_to_base_unit(quantity)
+        
         stock, _ = Stock.objects.get_or_create(
             product=product,
             warehouse=warehouse,
@@ -64,27 +69,29 @@ class PurchaseService:
         )
 
         if operation == 'add':
-            stock.quantity += quantity
+            stock.quantity += base_unit_quantity
         elif operation == 'subtract':
-            stock.quantity -= quantity
+            stock.quantity -= base_unit_quantity
             # Ensure stock doesn't go negative
             if stock.quantity < 0:
                 stock.quantity = Decimal('0.00')
 
         stock.save(update_fields=["quantity"])
-        return stock
+        return stock, base_unit_quantity
 
     @staticmethod
-    def _create_stock_transaction(product, stock, unit, company, quantity, direction, transaction_type, reference_id, note=None):
+    def _create_stock_transaction(product, stock, unit, company, original_quantity, base_unit_quantity, direction, transaction_type, reference_id, note=None):
         """
         Create a stock transaction record.
+        Records ORIGINAL quantity in transaction for audit trail.
 
         Args:
             product: Product instance
             stock: Stock instance
-            unit: Unit instance
+            unit: Unit instance (the unit used in the transaction)
             company: Company instance
-            quantity: Decimal quantity
+            original_quantity: Decimal quantity in original unit (for audit)
+            base_unit_quantity: Decimal quantity in base unit (used for stock)
             direction: StockDirection.IN or StockDirection.OUT
             transaction_type: TransactionType enum value
             reference_id: ID of the related purchase/sale
@@ -95,15 +102,15 @@ class PurchaseService:
         """
         stock_transaction = StockTransaction.objects.create(
             product=product,
-            quantity=quantity,
+            quantity=base_unit_quantity,  # Store in base unit for consistency
             stock=stock,
-            unit=unit,
+            unit=unit,  # Keep original unit for reference
             company=company,
             direction=direction,
             transaction_type=transaction_type,
             reference_id=reference_id,
             balance_after=stock.quantity,
-            note=note,
+            note=note or f"Original: {original_quantity} {unit.name} = {base_unit_quantity} base units",
         )
         return stock_transaction
 
@@ -112,6 +119,7 @@ class PurchaseService:
         """
         Revert stock for old purchase items (subtract quantities).
         Used when updating a purchase.
+        IMPORTANT: Converts to base unit before subtracting.
 
         Args:
             purchase: Purchase instance
@@ -121,25 +129,30 @@ class PurchaseService:
         """
         for old_item in old_items:
             if old_item.quantity > 0:
-                stock = PurchaseService._update_stock(
-                    old_item.product, warehouse, company, old_item.quantity, operation='subtract'
+                stock, base_qty = PurchaseService._update_stock(
+                    old_item.product, warehouse, company, old_item.quantity, old_item.unit, operation='subtract'
                 )
                 PurchaseService._create_stock_transaction(
                     product=old_item.product,
                     stock=stock,
                     unit=old_item.unit,
                     company=company,
-                    quantity=old_item.quantity,
+                    original_quantity=old_item.quantity,
+                    base_unit_quantity=base_qty,
                     direction=StockDirection.OUT,
                     transaction_type=TransactionType.PURCHASE_RETURN,
                     reference_id=purchase.id,
-                    note=f"Purchase update - reverted {old_item.quantity} from {purchase.invoice_number}",
+                    note=f"Purchase update - reverted {old_item.quantity} {old_item.unit.name} ({base_qty} base units) from {purchase.invoice_number}",
                 )
 
     @staticmethod
     def _process_purchase_items(purchase, items, warehouse, company, is_update=False):
         """
         Process purchase items and update stock accordingly.
+        IMPORTANT: Converts all quantities to base unit before storing in stock.
+        
+        Example: If user purchases 50kg * 2 (quantity=50, unit=kg, with conversion_factor=1.0)
+                 Stock will be updated by 100kg in base unit.
 
         Args:
             purchase: Purchase instance
@@ -172,22 +185,23 @@ class PurchaseService:
                 line_total=line_total,
             ))
 
-            # Update stock for new items
+            # Update stock for new items - CONVERTED TO BASE UNIT
             if quantity > 0:
-                stock = PurchaseService._update_stock(
-                    product, warehouse, company, quantity, operation='add'
+                stock, base_unit_quantity = PurchaseService._update_stock(
+                    product, warehouse, company, quantity, unit, operation='add'
                 )
                 transaction_note = (
-                    f"Purchase update - added {quantity} to {purchase.invoice_number}"
+                    f"Purchase update - added {quantity} {unit.name} ({base_unit_quantity} base units) to {purchase.invoice_number}"
                     if is_update
-                    else f"Purchase {purchase.invoice_number}"
+                    else f"Purchase {purchase.invoice_number} - {quantity} {unit.name} = {base_unit_quantity} base units"
                 )
                 PurchaseService._create_stock_transaction(
                     product=product,
                     stock=stock,
                     unit=unit,
                     company=company,
-                    quantity=quantity,
+                    original_quantity=quantity,
+                    base_unit_quantity=base_unit_quantity,
                     direction=StockDirection.IN,
                     transaction_type=TransactionType.PURCHASE,
                     reference_id=purchase.id,
