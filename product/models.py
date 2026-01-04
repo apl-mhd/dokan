@@ -3,9 +3,11 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 from company.models import Company
 
+
 class UnitCategory(models.Model):
-    name = models.CharField(max_length=50, unique=True)
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='unit_categories')
+    name = models.CharField(max_length=50)
+    company = models.ForeignKey(
+        Company, on_delete=models.PROTECT, related_name='unit_categories')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -13,6 +15,7 @@ class UnitCategory(models.Model):
         verbose_name = "Unit Category"
         verbose_name_plural = "Unit Categories"
         ordering = ['name']
+        unique_together = ['name', 'company']  # Unique per company
 
     def __str__(self):
         return self.name
@@ -30,7 +33,8 @@ class UnitCategory(models.Model):
 
 class Unit(models.Model):
     name = models.CharField(max_length=50)
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='units')
+    company = models.ForeignKey(
+        Company, on_delete=models.PROTECT, related_name='units')
     conversion_factor = models.DecimalField(
         max_digits=10,
         decimal_places=4,
@@ -107,8 +111,9 @@ class Unit(models.Model):
 
 
 class Category(models.Model):
-    name = models.CharField(max_length=128, unique=True)
-    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='categories')
+    name = models.CharField(max_length=128)
+    company = models.ForeignKey(
+        Company, on_delete=models.PROTECT, related_name='categories')
     description = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -117,6 +122,7 @@ class Category(models.Model):
         verbose_name = "Category"
         verbose_name_plural = "Categories"
         ordering = ['name']
+        unique_together = ['name', 'company']  # Unique per company
 
     def __str__(self):
         return self.name
@@ -124,6 +130,8 @@ class Category(models.Model):
 
 class Product(models.Model):
     name = models.CharField(max_length=128)
+    company = models.ForeignKey(
+        Company, on_delete=models.PROTECT, related_name='products')
     description = models.TextField(null=True, blank=True)
     category = models.ForeignKey(
         Category,
@@ -145,6 +153,9 @@ class Product(models.Model):
         ordering = ['name']
         verbose_name = "Product"
         verbose_name_plural = "Products"
+        indexes = [
+            models.Index(fields=['company', 'name']),
+        ]
 
     def __str__(self):
         return self.name
@@ -156,3 +167,9 @@ class Product(models.Model):
                 raise ValidationError({
                     'base_unit': 'Product base_unit must be a base unit (is_base_unit=True).'
                 })
+
+        # Validate category belongs to same company
+        if self.category and self.category.company != self.company:
+            raise ValidationError({
+                'category': f'Category must belong to company {self.company.name}'
+            })

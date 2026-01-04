@@ -8,17 +8,25 @@ from rest_framework.exceptions import ValidationError
 class ProductService:
 
     @staticmethod
-    def create_product(data):
+    def create_product(data, company=None):
         """
         Create a new product.
 
         Args:
             data: Dictionary containing product data
+            company: Company instance (for multi-tenant support)
 
         Returns:
             Product instance
         """
         category = get_object_or_404(Category, id=data.get('category'))
+        
+        # Validate category belongs to company if provided
+        if company and category.company != company:
+            raise ValidationError({
+                'category': 'Category does not belong to your company.'
+            })
+            
         base_unit = None
         if data.get('base_unit'):
             base_unit = get_object_or_404(Unit, id=data.get('base_unit'))
@@ -27,6 +35,11 @@ class ProductService:
                 raise ValidationError({
                     'base_unit': 'Product base_unit must be a base unit (is_base_unit=True).'
                 })
+            # Validate unit belongs to company if provided
+            if company and base_unit.company != company:
+                raise ValidationError({
+                    'base_unit': 'Unit does not belong to your company.'
+                })
 
         try:
             product = Product.objects.create(
@@ -34,30 +47,41 @@ class ProductService:
                 description=data.get('description', ''),
                 category=category,
                 base_unit=base_unit,
+                company=company or category.company,  # Use category's company as fallback
             )
+            product.full_clean()  # Run validation
             return product
         except IntegrityError as e:
             raise ValidationError(f"Error creating product: {str(e)}")
 
     @staticmethod
-    def update_product(product_id, data):
+    def update_product(product_id, data, company=None):
         """
         Update an existing product.
 
         Args:
             product_id: ID of the product to update
             data: Dictionary containing updated product data
+            company: Company instance (for multi-tenant support)
 
         Returns:
             Product instance
         """
-        product = get_object_or_404(Product, id=product_id)
+        queryset = Product.objects.all()
+        if company:
+            queryset = queryset.filter(company=company)
+        product = get_object_or_404(queryset, id=product_id)
 
         try:
             with transaction.atomic():
                 if 'category' in data:
                     category = get_object_or_404(
                         Category, id=data.get('category'))
+                    # Validate category belongs to company
+                    if company and category.company != company:
+                        raise ValidationError({
+                            'category': 'Category does not belong to your company.'
+                        })
                     product.category = category
 
                 if 'base_unit' in data:
@@ -68,6 +92,11 @@ class ProductService:
                             raise ValidationError({
                                 'base_unit': 'Product base_unit must be a base unit (is_base_unit=True).'
                             })
+                        # Validate unit belongs to company
+                        if company and base_unit.company != company:
+                            raise ValidationError({
+                                'base_unit': 'Unit does not belong to your company.'
+                            })
                         product.base_unit = base_unit
                     else:
                         product.base_unit = None
@@ -77,6 +106,7 @@ class ProductService:
                 if 'description' in data:
                     product.description = data.get('description', '')
 
+                product.full_clean()  # Run validation
                 product.save()
                 return product
 
@@ -84,17 +114,21 @@ class ProductService:
             raise ValidationError(f"Error updating product: {str(e)}")
 
     @staticmethod
-    def delete_product(product_id):
+    def delete_product(product_id, company=None):
         """
         Delete a product.
 
         Args:
             product_id: ID of the product to delete
+            company: Company instance (for multi-tenant support)
 
         Returns:
             True if successful
         """
-        product = get_object_or_404(Product, id=product_id)
+        queryset = Product.objects.all()
+        if company:
+            queryset = queryset.filter(company=company)
+        product = get_object_or_404(queryset, id=product_id)
 
         try:
             product.delete()
@@ -103,32 +137,45 @@ class ProductService:
             raise ValidationError(f"Error deleting product: {str(e)}")
 
     @staticmethod
-    def get_product(product_id):
+    def get_product(product_id, company=None):
         """
         Get a single product by ID.
 
         Args:
             product_id: ID of the product
+            company: Company instance (for multi-tenant support)
 
         Returns:
             Product instance
         """
-        return get_object_or_404(
-            Product.objects.select_related(
-                'category', 'base_unit__unit_category')
-            .prefetch_related('stocks'),
-            id=product_id
-        )
+        queryset = Product.objects.select_related(
+            'category', 'base_unit__unit_category', 'company'
+        ).prefetch_related('stocks')
+        
+        if company:
+            queryset = queryset.filter(company=company)
+            
+        return get_object_or_404(queryset, id=product_id)
 
     @staticmethod
-    def get_all_products():
+    def get_all_products(company=None):
         """
         Get all products with related data.
+
+        Args:
+            company: Company instance (for multi-tenant support)
 
         Returns:
             QuerySet of Product instances
         """
-        return Product.objects.select_related('category', 'base_unit__unit_category').prefetch_related('stocks').all()
+        queryset = Product.objects.select_related(
+            'category', 'base_unit__unit_category', 'company'
+        ).prefetch_related('stocks')
+        
+        if company:
+            queryset = queryset.filter(company=company)
+            
+        return queryset.all()
 
     @staticmethod
     def get_product_units(product_id):
@@ -298,14 +345,22 @@ class UnitService:
         return get_object_or_404(Unit.objects.select_related('unit_category'), id=unit_id)
 
     @staticmethod
-    def get_all_units():
+    def get_all_units(company=None):
         """
         Get all units.
+
+        Args:
+            company: Company instance (for multi-tenant support)
 
         Returns:
             QuerySet of Unit instances
         """
-        return Unit.objects.select_related('unit_category').all()
+        queryset = Unit.objects.select_related('unit_category', 'company')
+        
+        if company:
+            queryset = queryset.filter(company=company)
+            
+        return queryset.all()
 
 
 class UnitCategoryService:
