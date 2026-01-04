@@ -24,6 +24,7 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
+from core.dashboard_views import DashboardStatsAPIView
 
 
 urlpatterns = [
@@ -37,6 +38,9 @@ urlpatterns = [
     path('api/customers/', include('customer.urls')),
     path('api/warehouses/', include('warehouse.urls')),
     path('api/inventory/', include('inventory.urls')),
+    
+    # Dashboard
+    path('api/dashboard/stats/', DashboardStatsAPIView.as_view(), name='dashboard-stats'),
     
     # Authentication
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
