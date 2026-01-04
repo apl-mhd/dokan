@@ -24,11 +24,13 @@ class ProductSerializer(serializers.ModelSerializer):
         source='category.name', read_only=True)
     base_unit_name = serializers.CharField(
         source='base_unit.name', read_only=True)
+    company_name = serializers.CharField(
+        source='company.name', read_only=True)
 
     class Meta:
         model = Product
         fields = '__all__'
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['company', 'created_at', 'updated_at']
 
 
 class ProductCreateInputSerializer(serializers.Serializer):

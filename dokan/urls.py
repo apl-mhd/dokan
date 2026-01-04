@@ -28,14 +28,21 @@ from rest_framework_simplejwt.views import (
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    
+    # Main APIs
     path('api/purchases/', include('purchase.urls')),
     path('api/sales/', include('sale.urls')),
-    path('api/suppliers/', include('supplier.urls')),
     path('api/products/', include('product.urls')),
+    path('api/suppliers/', include('supplier.urls')),
+    path('api/customers/', include('customer.urls')),
+    path('api/warehouses/', include('warehouse.urls')),
+    path('api/inventory/', include('inventory.urls')),
+    
+    # Authentication
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
-
+    # API Documentation
     re_path(r'^swagger(?P<format>\.json|\.yaml)$',
             schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0),

@@ -27,10 +27,14 @@ class ProductAPIView(APIView):
     def get(self, request, product_id=None):
         """
         Get a single product by ID or list all products with units and stocks
+        Company-filtered: only shows products belonging to user's company
         """
+        # Check for company context (optional for now, but recommended)
+        company = getattr(request, 'company', None)
+
         if product_id is not None:
             try:
-                product = ProductService.get_product(product_id)
+                product = ProductService.get_product(product_id, company)
                 serializer = ProductSerializer(product)
                 return Response({
                     "message": "Product retrieved successfully",
@@ -42,13 +46,13 @@ class ProductAPIView(APIView):
                     "details": str(e)
                 }, status=status.HTTP_404_NOT_FOUND)
         else:
-            products = ProductService.get_all_products()
+            products = ProductService.get_all_products(company)
             data = []
 
             for product in products:
                 units = []
                 if product.base_unit and product.base_unit.unit_category:
-                    units = UnitService.get_all_units().filter(
+                    units = UnitService.get_all_units(company).filter(
                         unit_category=product.base_unit.unit_category
                     )
 
@@ -64,6 +68,8 @@ class ProductAPIView(APIView):
 
                 # Get stock quantity (sum of all warehouse stocks)
                 stocks = product.stocks.all()
+                if company:
+                    stocks = stocks.filter(company=company)
                 total_stock = sum(
                     stock.quantity for stock in stocks) if stocks else Decimal('0.00')
 
@@ -75,11 +81,13 @@ class ProductAPIView(APIView):
                         "id": product.category.id,
                         "name": product.category.name,
                     },
+                    "category_name": product.category.name,
                     "base_unit": {
                         "id": product.base_unit.id,
                         "name": product.base_unit.name,
                         "conversion_factor": str(product.base_unit.conversion_factor),
                     } if product.base_unit else None,
+                    "base_unit_name": product.base_unit.name if product.base_unit else None,
                     "units": unit_list,
                     "total_stock": str(total_stock),
                 }
@@ -93,12 +101,20 @@ class ProductAPIView(APIView):
     def post(self, request):
         """
         Create a new product
+        Company-aware: automatically sets company from request context
         """
+        company = getattr(request, 'company', None)
+        if not company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
         serializer = ProductCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
-            product = ProductService.create_product(serializer.validated_data)
+            product = ProductService.create_product(
+                serializer.validated_data, company)
             response_serializer = ProductSerializer(product)
             return Response({
                 "message": "Product created successfully",
@@ -118,13 +134,20 @@ class ProductAPIView(APIView):
     def put(self, request, product_id):
         """
         Update an existing product
+        Company-aware: can only update products belonging to user's company
         """
+        company = getattr(request, 'company', None)
+        if not company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
         serializer = ProductUpdateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
             product = ProductService.update_product(
-                product_id, serializer.validated_data)
+                product_id, serializer.validated_data, company)
             response_serializer = ProductSerializer(product)
             return Response({
                 "message": "Product updated successfully",
@@ -144,9 +167,16 @@ class ProductAPIView(APIView):
     def delete(self, request, product_id):
         """
         Delete a product
+        Company-aware: can only delete products belonging to user's company
         """
+        company = getattr(request, 'company', None)
+        if not company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
         try:
-            ProductService.delete_product(product_id)
+            ProductService.delete_product(product_id, company)
             return Response({
                 "message": "Product deleted successfully"
             }, status=status.HTTP_204_NO_CONTENT)
@@ -233,7 +263,6 @@ class StockCheckAPIView(APIView):
                 "error": "Error checking stock",
                 "details": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 class TestApi(APIView):
