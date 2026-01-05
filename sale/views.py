@@ -10,6 +10,7 @@ from rest_framework.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.db import IntegrityError
 from .services.sale_service import SaleService
+from .services.pdf_service import SaleInvoicePDF
 from .serializers import SaleSerializer
 
 
@@ -170,3 +171,36 @@ class SaleAPIView(APIView):
                 "error": "Failed to delete sale",
                 "details": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SaleInvoicePDFView(APIView):
+    """
+    Generate and download PDF invoice for a sale.
+    Company-filtered: can only access sales belonging to user's company.
+    """
+    def get(self, request, pk):
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            # Get sale with all related data
+            sale = get_object_or_404(
+                Sale.objects.filter(company=request.company)
+                .select_related('customer', 'warehouse', 'company', 'created_by')
+                .prefetch_related(
+                    Prefetch('items', queryset=SaleItem.objects.select_related('product', 'unit'))
+                ),
+                pk=pk
+            )
+            
+            # Generate PDF
+            pdf_generator = SaleInvoicePDF(sale)
+            return pdf_generator.generate()
+            
+        except Exception as e:
+            return Response({
+                "error": "Failed to generate PDF",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
