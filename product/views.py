@@ -70,6 +70,8 @@ class ProductAPIView(APIView):
                 stocks = product.stocks.all()
                 if company:
                     stocks = stocks.filter(company=company)
+                print(stocks)
+                print("-------------")
                 total_stock = sum(
                     stock.quantity for stock in stocks) if stocks else Decimal('0.00')
 
