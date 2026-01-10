@@ -1,7 +1,7 @@
 from .models import Sale, SaleItem
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from product.models import Product
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -38,12 +38,63 @@ class SaleAPIView(APIView):
             serializer = SaleSerializer(sale)
             return Response({"message": "Sale retrieved successfully", "data": serializer.data}, status=status.HTTP_200_OK)
         else:
+            # Get base queryset
             sales = Sale.objects.filter(company=request.company).select_related(
                 'customer', 'warehouse', 'created_by', 'company'
             ).prefetch_related(
                 Prefetch('items', queryset=SaleItem.objects.select_related(
                     'product', 'unit'))
-            ).all().order_by('-created_at')
+            )
+            
+            # Apply search filter
+            search_query = request.query_params.get('search', '').strip()
+            if search_query:
+                search_filter = (
+                    Q(invoice_number__icontains=search_query) |
+                    Q(customer__name__icontains=search_query) |
+                    Q(warehouse__name__icontains=search_query)
+                )
+                # Try to search by ID if search query is numeric
+                try:
+                    search_id = int(search_query)
+                    search_filter |= Q(id=search_id)
+                except (ValueError, TypeError):
+                    pass
+                sales = sales.filter(search_filter)
+            
+            # Apply status filter
+            status_filter = request.query_params.get('status', '').strip()
+            if status_filter:
+                sales = sales.filter(status=status_filter)
+            
+            # Apply pagination if needed
+            page = request.query_params.get('page', None)
+            page_size = request.query_params.get('page_size', None)
+            
+            if page and page_size:
+                try:
+                    page = int(page)
+                    page_size = int(page_size)
+                    start = (page - 1) * page_size
+                    end = start + page_size
+                    total_count = sales.count()
+                    sales = sales.order_by('-created_at')[start:end]
+                    
+                    serializer = SaleSerializer(sales, many=True)
+                    return Response({
+                        "message": "Sales retrieved successfully",
+                        "data": serializer.data,
+                        "count": total_count,
+                        "page": page,
+                        "page_size": page_size,
+                        "total_pages": (total_count + page_size - 1) // page_size if total_count > 0 else 0
+                    }, status=status.HTTP_200_OK)
+                except (ValueError, TypeError):
+                    # Invalid pagination params, return all
+                    pass
+            
+            # Return all if no pagination
+            sales = sales.order_by('-created_at')
             serializer = SaleSerializer(sales, many=True)
             return Response({"message": "Sales retrieved successfully", "data": serializer.data}, status=status.HTTP_200_OK)
 
