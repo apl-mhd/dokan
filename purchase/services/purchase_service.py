@@ -13,7 +13,8 @@ from purchase.serializers import (
     PurchaseUpdateInputSerializer
 )
 from rest_framework.exceptions import ValidationError
-from uuid import uuid4
+from core.services.invoice_number import InvoiceNumberGenerator
+from core.models import DocumentType
 
 
 class PurchaseService:
@@ -319,8 +320,14 @@ class PurchaseService:
                 if invoice_date is None:
                     invoice_date = timezone.now().date()
 
+                # Generate invoice number using InvoiceNumberGenerator
+                invoice_number = InvoiceNumberGenerator.generate_invoice_number(
+                    company=company,
+                    doc_type=DocumentType.PURCHASE_ORDER
+                )
+
                 purchase = Purchase.objects.create(
-                    invoice_number=str(uuid4()),
+                    invoice_number=invoice_number,
                     status=validated_data.get(
                         "status", PurchaseStatus.PENDING),
                     created_by=user,

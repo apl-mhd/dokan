@@ -12,7 +12,8 @@ from sale.serializers import (
     SaleUpdateInputSerializer
 )
 from rest_framework.exceptions import ValidationError
-from uuid import uuid4
+from core.services.invoice_number import InvoiceNumberGenerator
+from core.models import DocumentType
 
 
 class SaleService:
@@ -62,7 +63,7 @@ class SaleService:
         """
         # Convert quantity to base unit
         base_unit_quantity = unit.convert_to_base_unit(quantity)
-        
+
         stock, _ = Stock.objects.get_or_create(
             product=product,
             warehouse=warehouse,
@@ -157,7 +158,7 @@ class SaleService:
         """
         Process sale items and update stock accordingly.
         IMPORTANT: Converts all quantities to base unit before deducting from stock.
-        
+
         Example: If user sells 50kg * 2 (quantity=50, unit=kg, with conversion_factor=1.0)
                  Stock will be reduced by 100kg in base unit.
 
@@ -317,8 +318,14 @@ class SaleService:
 
         try:
             with transaction.atomic():
+                # Generate invoice number using InvoiceNumberGenerator
+                invoice_number = InvoiceNumberGenerator.generate_invoice_number(
+                    company=company,
+                    doc_type=DocumentType.SALES_ORDER
+                )
+
                 sale = Sale.objects.create(
-                    invoice_number=str(uuid4()),
+                    invoice_number=invoice_number,
                     status=validated_data.get("status", SaleStatus.PENDING),
                     created_by=user,
                     warehouse=warehouse,
