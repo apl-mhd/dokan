@@ -2,6 +2,7 @@ from decimal import Decimal
 from django.shortcuts import get_object_or_404
 from django.db import transaction, IntegrityError
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 from inventory.models import Stock, StockTransaction, TransactionType, StockDirection
 from product.models import Product, Unit
 from purchase.models import Purchase, PurchaseItem, PurchaseStatus
@@ -60,7 +61,7 @@ class PurchaseService:
         """
         # Convert quantity to base unit
         base_unit_quantity = unit.convert_to_base_unit(quantity)
-        
+
         stock, _ = Stock.objects.get_or_create(
             product=product,
             warehouse=warehouse,
@@ -150,7 +151,7 @@ class PurchaseService:
         """
         Process purchase items and update stock accordingly.
         IMPORTANT: Converts all quantities to base unit before storing in stock.
-        
+
         Example: If user purchases 50kg * 2 (quantity=50, unit=kg, with conversion_factor=1.0)
                  Stock will be updated by 100kg in base unit.
 
@@ -168,8 +169,11 @@ class PurchaseService:
         purchase_items = []
 
         for item in items:
-            product = get_object_or_404(Product, id=item['product'])
-            unit = get_object_or_404(Unit, id=item['unit'])
+            # Validate product and unit belong to the company
+            product = get_object_or_404(Product.objects.filter(
+                company=company), id=item['product'])
+            unit = get_object_or_404(Unit.objects.filter(
+                company=company), id=item['unit'])
             quantity = Decimal(str(item['quantity']))
             unit_price = Decimal(str(item['unit_price']))
             line_total = quantity * unit_price
@@ -310,6 +314,11 @@ class PurchaseService:
 
         try:
             with transaction.atomic():
+                # Get invoice_date from validated_data, default to today's date
+                invoice_date = validated_data.get("invoice_date")
+                if invoice_date is None:
+                    invoice_date = timezone.now().date()
+
                 purchase = Purchase.objects.create(
                     invoice_number=str(uuid4()),
                     status=validated_data.get(
@@ -319,7 +328,7 @@ class PurchaseService:
                     supplier=supplier,
                     company=company,  # Automatically set company
                     notes=validated_data.get("notes", ""),
-                    invoice_date=validated_data.get("invoice_date"),
+                    invoice_date=invoice_date,
                 )
 
                 # Process items and update stock

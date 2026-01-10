@@ -96,6 +96,7 @@ class SaleAPIView(APIView):
         """
         Update an existing sale.
         Company-aware: can only update sales belonging to user's company.
+        Prevents editing delivered sales.
         """
         if not hasattr(request, 'company') or not request.company:
             return Response({
@@ -105,6 +106,17 @@ class SaleAPIView(APIView):
         if not pk:
             return Response({
                 "error": "Sale ID is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if sale exists and is not delivered
+        sale = get_object_or_404(
+            Sale.objects.filter(company=request.company),
+            pk=pk
+        )
+        
+        if sale.status == 'delivered':
+            return Response({
+                "error": "Cannot edit a delivered sale"
             }, status=status.HTTP_400_BAD_REQUEST)
 
         data = request.data

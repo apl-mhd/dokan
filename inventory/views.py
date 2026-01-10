@@ -16,7 +16,7 @@ class StockViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """Filter stock by company if available"""
         queryset = Stock.objects.select_related(
-            'product', 'warehouse', 'company'
+            'product', 'product__base_unit', 'warehouse', 'company'
         ).all()
         
         # Filter by company if middleware provides it
@@ -55,7 +55,7 @@ class StockTransactionViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """Filter transactions by company if available"""
         queryset = StockTransaction.objects.select_related(
-            'product', 'stock', 'stock__warehouse', 'unit', 'company'
+            'product', 'product__base_unit', 'stock', 'stock__warehouse', 'unit', 'company'
         ).all()
         
         # Filter by company if middleware provides it

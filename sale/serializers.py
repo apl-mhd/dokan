@@ -5,11 +5,14 @@ from customer.models import Customer
 
 class SaleItemOutputSerializer(serializers.ModelSerializer):
     """Serializer for sale items in output (read-only)"""
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    
     class Meta:
         model = SaleItem
-        fields = ['id', 'product', 'quantity', 'unit',
+        fields = ['id', 'product', 'product_name', 'quantity', 'unit', 'unit_name',
                   'unit_price', 'line_total', 'created_at']
-        read_only_fields = ['line_total', 'created_at']
+        read_only_fields = ['line_total', 'created_at', 'product_name', 'unit_name']
 
 
 class SaleItemInputSerializer(serializers.Serializer):

@@ -1,14 +1,25 @@
+from django.utils import timezone
 from rest_framework import serializers
 from .models import Purchase, PurchaseItem, PurchaseStatus
 from supplier.models import Supplier
 
 
+def get_default_invoice_date():
+    """Default function for invoice_date field"""
+    return timezone.now().date()
+
+
 class ItemSerializer(serializers.ModelSerializer):
     """Serializer for purchase items in output (read-only)"""
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+
     class Meta:
         model = PurchaseItem
-        fields = ['id', 'product', 'quantity', 'unit', 'unit_price', 'line_total', 'created_at']
-        read_only_fields = ['line_total', 'created_at']
+        fields = ['id', 'product', 'product_name', 'quantity', 'unit',
+                  'unit_name', 'unit_price', 'line_total', 'created_at']
+        read_only_fields = ['line_total',
+                            'created_at', 'product_name', 'unit_name']
 
 
 class PurchaseItemInputSerializer(serializers.Serializer):
@@ -44,7 +55,8 @@ class PurchaseCreateInputSerializer(serializers.Serializer):
     )
     notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
-    invoice_date = serializers.DateField(required=False)
+    invoice_date = serializers.DateField(
+        required=False, default=get_default_invoice_date)
 
     def validate_items(self, value):
         if not value or len(value) == 0:
@@ -88,11 +100,14 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
 class PurchaseSerializer(serializers.ModelSerializer):
     """Serializer for purchase output (read operations)"""
     items = ItemSerializer(many=True, read_only=True)
-    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
-    warehouse_name = serializers.CharField(source='warehouse.name', read_only=True)
+    supplier_name = serializers.CharField(
+        source='supplier.name', read_only=True)
+    warehouse_name = serializers.CharField(
+        source='warehouse.name', read_only=True)
     company_name = serializers.CharField(source='company.name', read_only=True)
 
     class Meta:
         model = Purchase
         fields = '__all__'
-        read_only_fields = ['grand_total', 'company', 'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['grand_total', 'company',
+                            'created_by', 'created_at', 'updated_at']

@@ -10,6 +10,7 @@ from rest_framework.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.db import IntegrityError
 from .services.purchase_service import PurchaseService
+from .services.pdf_service import PurchaseInvoicePDF
 from .serializers import PurchaseSerializer
 
 
@@ -93,6 +94,7 @@ class PurchaseAPIView(APIView):
         """
         Update an existing purchase.
         Company-aware: can only update purchases belonging to user's company.
+        Prevents editing completed purchases.
         """
         if not hasattr(request, 'company') or not request.company:
             return Response({
@@ -102,6 +104,17 @@ class PurchaseAPIView(APIView):
         if not pk:
             return Response({
                 "error": "Purchase ID is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if purchase exists and is not completed
+        purchase = get_object_or_404(
+            Purchase.objects.filter(company=request.company),
+            pk=pk
+        )
+        
+        if purchase.status == 'completed':
+            return Response({
+                "error": "Cannot edit a completed purchase"
             }, status=status.HTTP_400_BAD_REQUEST)
 
         data = request.data
@@ -167,6 +180,39 @@ class PurchaseAPIView(APIView):
                 "error": "Failed to delete purchase",
                 "details": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PurchaseInvoicePDFView(APIView):
+    """
+    Generate and download PDF invoice for a purchase.
+    Company-filtered: can only access purchases belonging to user's company.
+    """
+    def get(self, request, pk):
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            # Get purchase with all related data
+            purchase = get_object_or_404(
+                Purchase.objects.filter(company=request.company)
+                .select_related('supplier', 'warehouse', 'company', 'created_by')
+                .prefetch_related(
+                    Prefetch('items', queryset=PurchaseItem.objects.select_related('product', 'unit'))
+                ),
+                pk=pk
+            )
+            
+            # Generate PDF
+            pdf_generator = PurchaseInvoicePDF(purchase)
+            return pdf_generator.generate()
+            
+        except Exception as e:
+            return Response({
+                "error": "Failed to generate PDF",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 def test(request):
