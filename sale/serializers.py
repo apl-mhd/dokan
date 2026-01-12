@@ -93,6 +93,10 @@ class SaleSerializer(serializers.ModelSerializer):
     items = SaleItemOutputSerializer(many=True, read_only=True)
     customer_name = serializers.CharField(
         source='customer.name', read_only=True)
+    customer_phone = serializers.CharField(
+        source='customer.phone', read_only=True)
+    customer_address = serializers.CharField(
+        source='customer.address', read_only=True)
     warehouse_name = serializers.CharField(
         source='warehouse.name', read_only=True)
     company_name = serializers.CharField(source='company.name', read_only=True)
