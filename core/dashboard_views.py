@@ -73,31 +73,112 @@ class DashboardStatsAPIView(APIView):
             total=Sum('grand_total')
         )
         
-        # Sales Trend (Last 7 days)
-        sales_trend = []
-        for i in range(6, -1, -1):
-            date = today - timedelta(days=i)
-            daily_sales = Sale.objects.filter(
-                company=company,
-                invoice_date=date
-            ).aggregate(total=Sum('grand_total'))
-            sales_trend.append({
-                'date': date.strftime('%Y-%m-%d'),
-                'amount': float(daily_sales['total'] or 0)
-            })
+        # Get period parameter (weekly or monthly)
+        period = request.query_params.get('period', 'weekly')
         
-        # Purchase Trend (Last 7 days)
+        # Sales Trend - Weekly (Last 7 days) or Monthly (Last 30 days)
+        sales_trend = []
+        if period == 'weekly':
+            for i in range(6, -1, -1):
+                date = today - timedelta(days=i)
+                daily_sales = Sale.objects.filter(
+                    company=company,
+                    invoice_date=date
+                ).aggregate(total=Sum('grand_total'))
+                sales_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_sales['total'] or 0)
+                })
+        else:  # monthly
+            for i in range(29, -1, -1):
+                date = today - timedelta(days=i)
+                daily_sales = Sale.objects.filter(
+                    company=company,
+                    invoice_date=date
+                ).aggregate(total=Sum('grand_total'))
+                sales_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_sales['total'] or 0)
+                })
+        
+        # Purchase Trend - Weekly (Last 7 days) or Monthly (Last 30 days)
         purchase_trend = []
-        for i in range(6, -1, -1):
-            date = today - timedelta(days=i)
-            daily_purchases = Purchase.objects.filter(
-                company=company,
-                invoice_date=date
-            ).aggregate(total=Sum('grand_total'))
-            purchase_trend.append({
-                'date': date.strftime('%Y-%m-%d'),
-                'amount': float(daily_purchases['total'] or 0)
-            })
+        if period == 'weekly':
+            for i in range(6, -1, -1):
+                date = today - timedelta(days=i)
+                daily_purchases = Purchase.objects.filter(
+                    company=company,
+                    invoice_date=date
+                ).aggregate(total=Sum('grand_total'))
+                purchase_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_purchases['total'] or 0)
+                })
+        else:  # monthly
+            for i in range(29, -1, -1):
+                date = today - timedelta(days=i)
+                daily_purchases = Purchase.objects.filter(
+                    company=company,
+                    invoice_date=date
+                ).aggregate(total=Sum('grand_total'))
+                purchase_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_purchases['total'] or 0)
+                })
+        
+        # Sales Due Trend (Last 7 days or 30 days)
+        sales_due_trend = []
+        if period == 'weekly':
+            for i in range(6, -1, -1):
+                date = today - timedelta(days=i)
+                daily_dues = Sale.objects.filter(
+                    company=company,
+                    invoice_date=date,
+                    status='pending'
+                ).aggregate(total=Sum('grand_total'))
+                sales_due_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_dues['total'] or 0)
+                })
+        else:  # monthly
+            for i in range(29, -1, -1):
+                date = today - timedelta(days=i)
+                daily_dues = Sale.objects.filter(
+                    company=company,
+                    invoice_date=date,
+                    status='pending'
+                ).aggregate(total=Sum('grand_total'))
+                sales_due_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_dues['total'] or 0)
+                })
+        
+        # Purchase Due Trend (Last 7 days or 30 days)
+        purchase_due_trend = []
+        if period == 'weekly':
+            for i in range(6, -1, -1):
+                date = today - timedelta(days=i)
+                daily_dues = Purchase.objects.filter(
+                    company=company,
+                    invoice_date=date,
+                    status='pending'
+                ).aggregate(total=Sum('grand_total'))
+                purchase_due_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_dues['total'] or 0)
+                })
+        else:  # monthly
+            for i in range(29, -1, -1):
+                date = today - timedelta(days=i)
+                daily_dues = Purchase.objects.filter(
+                    company=company,
+                    invoice_date=date,
+                    status='pending'
+                ).aggregate(total=Sum('grand_total'))
+                purchase_due_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_dues['total'] or 0)
+                })
         
         # Low Stock Items
         low_stock = Stock.objects.filter(
@@ -122,7 +203,8 @@ class DashboardStatsAPIView(APIView):
                         "count": sales_month['count']
                     },
                     "pending_dues": float(pending_customer_dues['total'] or 0),
-                    "trend": sales_trend
+                    "trend": sales_trend,
+                    "due_trend": sales_due_trend
                 },
                 "purchases": {
                     "today": {
@@ -134,7 +216,8 @@ class DashboardStatsAPIView(APIView):
                         "count": purchases_month['count']
                     },
                     "supplier_outstanding": float(supplier_outstanding['total'] or 0),
-                    "trend": purchase_trend
+                    "trend": purchase_trend,
+                    "due_trend": purchase_due_trend
                 },
                 "low_stock": list(low_stock)
             }

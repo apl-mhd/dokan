@@ -11,6 +11,13 @@ class PurchaseStatus(models.TextChoices):
     CANCELLED = 'cancelled', 'Cancelled'
 
 
+class PaymentStatus(models.TextChoices):
+    UNPAID = 'unpaid', 'Unpaid'
+    PARTIAL = 'partial', 'Partial'
+    PAID = 'paid', 'Paid'
+    OVERPAID = 'overpaid', 'Overpaid'
+
+
 class Purchase(models.Model):
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT)
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='purchases')
@@ -32,6 +39,18 @@ class Purchase(models.Model):
         max_digits=10,
         decimal_places=2,
         default=0.00)
+    delivery_charge = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00)
+    paid_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00)
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.UNPAID)
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT)
     created_by = models.ForeignKey(
         'auth.User',

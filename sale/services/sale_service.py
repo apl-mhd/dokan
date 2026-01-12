@@ -4,7 +4,7 @@ from django.db import transaction, IntegrityError
 from django.core.exceptions import ValidationError as DjangoValidationError
 from inventory.models import Stock, StockTransaction, TransactionType, StockDirection
 from product.models import Product, Unit
-from sale.models import Sale, SaleItem, SaleStatus
+from sale.models import Sale, SaleItem, SaleStatus, PaymentStatus
 from customer.models import Customer
 from warehouse.models import Warehouse
 from sale.serializers import (
@@ -170,9 +170,9 @@ class SaleService:
             is_update: Boolean indicating if this is an update operation
 
         Returns:
-            tuple: (sale_items list, grand_total Decimal)
+            tuple: (sale_items list, sub_total Decimal)
         """
-        grand_total = Decimal('0.00')
+        sub_total = Decimal('0.00')
         sale_items = []
 
         for item in items:
@@ -181,7 +181,7 @@ class SaleService:
             quantity = Decimal(str(item['quantity']))
             unit_price = Decimal(str(item['unit_price']))
             line_total = quantity * unit_price
-            grand_total += line_total
+            sub_total += line_total
 
             sale_items.append(SaleItem(
                 sale=sale,
@@ -216,7 +216,20 @@ class SaleService:
                     note=transaction_note,
                 )
 
-        return sale_items, grand_total
+        return sale_items, sub_total
+    
+    @staticmethod
+    def _calculate_payment_status(paid_amount, grand_total):
+        """Calculate payment status based on paid_amount and grand_total"""
+        if paid_amount <= 0:
+            return PaymentStatus.UNPAID
+        elif paid_amount >= grand_total:
+            if paid_amount > grand_total:
+                return PaymentStatus.OVERPAID
+            else:
+                return PaymentStatus.PAID
+        else:
+            return PaymentStatus.PARTIAL
 
     @staticmethod
     def update_sale(data, user, company):
@@ -270,7 +283,7 @@ class SaleService:
                 sale.save()
 
                 # Process new items and update stock
-                sale_items, grand_total = SaleService._process_sale_items(
+                sale_items, sub_total = SaleService._process_sale_items(
                     sale=sale,
                     items=items,
                     warehouse=warehouse,
@@ -279,8 +292,24 @@ class SaleService:
                 )
 
                 SaleItem.objects.bulk_create(sale_items)
-                sale.grand_total = grand_total
-                sale.save(update_fields=["grand_total"])
+                
+                # Calculate totals
+                sale.sub_total = sub_total
+                sale.tax = Decimal(str(validated_data.get('tax', 0.00)))
+                sale.discount = Decimal(str(validated_data.get('discount', 0.00)))
+                sale.delivery_charge = Decimal(str(validated_data.get('delivery_charge', 0.00)))
+                sale.grand_total = sub_total + sale.tax + sale.delivery_charge - sale.discount
+                
+                # Handle payment fields
+                paid_amount = Decimal(str(validated_data.get('paid_amount', 0.00)))
+                sale.paid_amount = paid_amount
+                if 'payment_status' in validated_data:
+                    sale.payment_status = validated_data['payment_status']
+                else:
+                    # Auto-calculate payment status if not provided
+                    sale.payment_status = SaleService._calculate_payment_status(paid_amount, sale.grand_total)
+                
+                sale.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
                 return sale
 
@@ -336,7 +365,7 @@ class SaleService:
                 )
 
                 # Process items and update stock
-                sale_items, grand_total = SaleService._process_sale_items(
+                sale_items, sub_total = SaleService._process_sale_items(
                     sale=sale,
                     items=items,
                     warehouse=warehouse,
@@ -345,8 +374,24 @@ class SaleService:
                 )
 
                 SaleItem.objects.bulk_create(sale_items)
-                sale.grand_total = grand_total
-                sale.save(update_fields=["grand_total"])
+                
+                # Calculate totals
+                sale.sub_total = sub_total
+                sale.tax = Decimal(str(validated_data.get('tax', 0.00)))
+                sale.discount = Decimal(str(validated_data.get('discount', 0.00)))
+                sale.delivery_charge = Decimal(str(validated_data.get('delivery_charge', 0.00)))
+                sale.grand_total = sub_total + sale.tax + sale.delivery_charge - sale.discount
+                
+                # Handle payment fields
+                paid_amount = Decimal(str(validated_data.get('paid_amount', 0.00)))
+                sale.paid_amount = paid_amount
+                if 'payment_status' in validated_data:
+                    sale.payment_status = validated_data['payment_status']
+                else:
+                    # Auto-calculate payment status if not provided
+                    sale.payment_status = SaleService._calculate_payment_status(paid_amount, sale.grand_total)
+                
+                sale.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
                 return sale
 

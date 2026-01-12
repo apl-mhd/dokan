@@ -45,7 +45,7 @@ class SaleAPIView(APIView):
                 Prefetch('items', queryset=SaleItem.objects.select_related(
                     'product', 'unit'))
             )
-            
+
             # Apply search filter
             search_query = request.query_params.get('search', '').strip()
             if search_query:
@@ -61,16 +61,23 @@ class SaleAPIView(APIView):
                 except (ValueError, TypeError):
                     pass
                 sales = sales.filter(search_filter)
-            
+
             # Apply status filter
             status_filter = request.query_params.get('status', '').strip()
             if status_filter:
                 sales = sales.filter(status=status_filter)
-            
+
+            # Apply payment_status filter
+            payment_status_filter = request.query_params.get(
+                'payment_status', '').strip()
+            if payment_status_filter:
+                sales = sales.filter(
+                    payment_status=payment_status_filter)
+
             # Apply pagination if needed
             page = request.query_params.get('page', None)
             page_size = request.query_params.get('page_size', None)
-            
+
             if page and page_size:
                 try:
                     page = int(page)
@@ -79,7 +86,7 @@ class SaleAPIView(APIView):
                     end = start + page_size
                     total_count = sales.count()
                     sales = sales.order_by('-created_at')[start:end]
-                    
+
                     serializer = SaleSerializer(sales, many=True)
                     return Response({
                         "message": "Sales retrieved successfully",
@@ -92,7 +99,7 @@ class SaleAPIView(APIView):
                 except (ValueError, TypeError):
                     # Invalid pagination params, return all
                     pass
-            
+
             # Return all if no pagination
             sales = sales.order_by('-created_at')
             serializer = SaleSerializer(sales, many=True)
@@ -117,7 +124,8 @@ class SaleAPIView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            sale = SaleService.create_sale(data, user, request.company)
+            sale = SaleService.create_sale(
+                data, user, request.company)
             serializer = SaleSerializer(sale)
             return Response({
                 "message": "Sale created successfully",
@@ -147,7 +155,7 @@ class SaleAPIView(APIView):
         """
         Update an existing sale.
         Company-aware: can only update sales belonging to user's company.
-        Prevents editing delivered sales.
+        Prevents editing completed sales.
         """
         if not hasattr(request, 'company') or not request.company:
             return Response({
@@ -159,12 +167,12 @@ class SaleAPIView(APIView):
                 "error": "Sale ID is required"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if sale exists and is not delivered
+        # Check if sale exists and is not completed
         sale = get_object_or_404(
             Sale.objects.filter(company=request.company),
             pk=pk
         )
-        
+
         if sale.status == 'delivered':
             return Response({
                 "error": "Cannot edit a delivered sale"
@@ -180,7 +188,8 @@ class SaleAPIView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            sale = SaleService.update_sale(data, user, request.company)
+            sale = SaleService.update_sale(
+                data, user, request.company)
             serializer = SaleSerializer(sale)
             return Response({
                 "message": "Sale updated successfully",
@@ -222,8 +231,8 @@ class SaleAPIView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            sale = get_object_or_404(Sale.objects.filter(
-                company=request.company), pk=pk)
+            sale = get_object_or_404(
+                Sale.objects.filter(company=request.company), pk=pk)
             sale.delete()
             return Response({
                 "message": "Sale deleted successfully"
@@ -241,11 +250,27 @@ class SaleInvoicePDFView(APIView):
     Generate and download PDF invoice for a sale.
     Company-filtered: can only access sales belonging to user's company.
     """
+
     def get(self, request, pk):
+        """
+        Generate and return PDF invoice for a sale.
+
+        Args:
+            request: HTTP request object
+            pk: Primary key of the sale
+
+        Returns:
+            HttpResponse with PDF content or error response
+        """
         if not hasattr(request, 'company') or not request.company:
             return Response({
                 "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
             }, status=status.HTTP_403_FORBIDDEN)
+
+        if not pk:
+            return Response({
+                "error": "Sale ID is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Get sale with all related data
@@ -253,15 +278,16 @@ class SaleInvoicePDFView(APIView):
                 Sale.objects.filter(company=request.company)
                 .select_related('customer', 'warehouse', 'company', 'created_by')
                 .prefetch_related(
-                    Prefetch('items', queryset=SaleItem.objects.select_related('product', 'unit'))
+                    Prefetch('items', queryset=SaleItem.objects.select_related(
+                        'product', 'unit'))
                 ),
                 pk=pk
             )
-            
+
             # Generate PDF
             pdf_generator = SaleInvoicePDF(sale)
             return pdf_generator.generate()
-            
+
         except Exception as e:
             return Response({
                 "error": "Failed to generate PDF",

@@ -15,6 +15,13 @@ class SaleStatus(models.TextChoices):
     CANCELLED = 'cancelled', 'Cancelled'
 
 
+class PaymentStatus(models.TextChoices):
+    UNPAID = 'unpaid', 'Unpaid'
+    PARTIAL = 'partial', 'Partial'
+    PAID = 'paid', 'Paid'
+    OVERPAID = 'overpaid', 'Overpaid'
+
+
 class Sale(models.Model):
     customer = models.ForeignKey(
         Customer, on_delete=models.PROTECT, related_name='sales')
@@ -24,8 +31,22 @@ class Sale(models.Model):
         Warehouse, on_delete=models.PROTECT, related_name='sales')
     invoice_number = models.CharField(max_length=128, null=True, blank=True)
     invoice_date = models.DateField(default=now)
+    sub_total = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00)
+    tax = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00)
+    discount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00)
+    delivery_charge = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00)
     grand_total = models.DecimalField(
         max_digits=10, decimal_places=2, default=0.00)
+    paid_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0.00)
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.UNPAID)
 
     created_by = models.ForeignKey(
         'auth.User', on_delete=models.CASCADE, related_name='sale_created_by')

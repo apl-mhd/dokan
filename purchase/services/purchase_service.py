@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from inventory.models import Stock, StockTransaction, TransactionType, StockDirection
 from product.models import Product, Unit
-from purchase.models import Purchase, PurchaseItem, PurchaseStatus
+from purchase.models import Purchase, PurchaseItem, PurchaseStatus, PaymentStatus
 from supplier.models import Supplier
 from warehouse.models import Warehouse
 from purchase.serializers import (
@@ -164,9 +164,9 @@ class PurchaseService:
             is_update: Boolean indicating if this is an update operation
 
         Returns:
-            tuple: (purchase_items list, grand_total Decimal)
+            tuple: (purchase_items list, sub_total Decimal)
         """
-        grand_total = Decimal('0.00')
+        sub_total = Decimal('0.00')
         purchase_items = []
 
         for item in items:
@@ -178,7 +178,7 @@ class PurchaseService:
             quantity = Decimal(str(item['quantity']))
             unit_price = Decimal(str(item['unit_price']))
             line_total = quantity * unit_price
-            grand_total += line_total
+            sub_total += line_total
 
             purchase_items.append(PurchaseItem(
                 purchase=purchase,
@@ -213,7 +213,20 @@ class PurchaseService:
                     note=transaction_note,
                 )
 
-        return purchase_items, grand_total
+        return purchase_items, sub_total
+    
+    @staticmethod
+    def _calculate_payment_status(paid_amount, grand_total):
+        """Calculate payment status based on paid_amount and grand_total"""
+        if paid_amount <= 0:
+            return PaymentStatus.UNPAID
+        elif paid_amount >= grand_total:
+            if paid_amount > grand_total:
+                return PaymentStatus.OVERPAID
+            else:
+                return PaymentStatus.PAID
+        else:
+            return PaymentStatus.PARTIAL
 
     @staticmethod
     def update_purchase(data, user, company):
@@ -267,7 +280,7 @@ class PurchaseService:
                 purchase.save()
 
                 # Process new items and update stock
-                purchase_items, grand_total = PurchaseService._process_purchase_items(
+                purchase_items, sub_total = PurchaseService._process_purchase_items(
                     purchase=purchase,
                     items=items,
                     warehouse=warehouse,
@@ -276,8 +289,24 @@ class PurchaseService:
                 )
 
                 PurchaseItem.objects.bulk_create(purchase_items)
-                purchase.grand_total = grand_total
-                purchase.save(update_fields=["grand_total"])
+                
+                # Calculate totals
+                purchase.sub_total = sub_total
+                purchase.tax = Decimal(str(validated_data.get('tax', 0.00)))
+                purchase.discount = Decimal(str(validated_data.get('discount', 0.00)))
+                purchase.delivery_charge = Decimal(str(validated_data.get('delivery_charge', 0.00)))
+                purchase.grand_total = sub_total + purchase.tax + purchase.delivery_charge - purchase.discount
+                
+                # Handle payment fields
+                paid_amount = Decimal(str(validated_data.get('paid_amount', 0.00)))
+                purchase.paid_amount = paid_amount
+                if 'payment_status' in validated_data:
+                    purchase.payment_status = validated_data['payment_status']
+                else:
+                    # Auto-calculate payment status if not provided
+                    purchase.payment_status = PurchaseService._calculate_payment_status(paid_amount, purchase.grand_total)
+                
+                purchase.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
                 return purchase
 
@@ -339,7 +368,7 @@ class PurchaseService:
                 )
 
                 # Process items and update stock
-                purchase_items, grand_total = PurchaseService._process_purchase_items(
+                purchase_items, sub_total = PurchaseService._process_purchase_items(
                     purchase=purchase,
                     items=items,
                     warehouse=warehouse,
@@ -348,8 +377,24 @@ class PurchaseService:
                 )
 
                 PurchaseItem.objects.bulk_create(purchase_items)
-                purchase.grand_total = grand_total
-                purchase.save(update_fields=["grand_total"])
+                
+                # Calculate totals
+                purchase.sub_total = sub_total
+                purchase.tax = Decimal(str(validated_data.get('tax', 0.00)))
+                purchase.discount = Decimal(str(validated_data.get('discount', 0.00)))
+                purchase.delivery_charge = Decimal(str(validated_data.get('delivery_charge', 0.00)))
+                purchase.grand_total = sub_total + purchase.tax + purchase.delivery_charge - purchase.discount
+                
+                # Handle payment fields
+                paid_amount = Decimal(str(validated_data.get('paid_amount', 0.00)))
+                purchase.paid_amount = paid_amount
+                if 'payment_status' in validated_data:
+                    purchase.payment_status = validated_data['payment_status']
+                else:
+                    # Auto-calculate payment status if not provided
+                    purchase.payment_status = PurchaseService._calculate_payment_status(paid_amount, purchase.grand_total)
+                
+                purchase.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
                 return purchase
 

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from sale.models import Sale, SaleItem, SaleStatus
+from sale.models import Sale, SaleItem, SaleStatus, PaymentStatus
 from customer.models import Customer
 
 
@@ -46,6 +46,21 @@ class SaleCreateInputSerializer(serializers.Serializer):
         default=SaleStatus.PENDING,
         required=False
     )
+    sub_total = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=0.00)
+    tax = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=0.00)
+    discount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=0.00)
+    delivery_charge = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=0.00)
+    paid_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=0.00)
+    payment_status = serializers.ChoiceField(
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.UNPAID,
+        required=False
+    )
     notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
     invoice_date = serializers.DateField(required=False)
@@ -62,6 +77,20 @@ class SaleUpdateInputSerializer(serializers.Serializer):
     items = SaleItemInputSerializer(many=True, required=True)
     status = serializers.ChoiceField(
         choices=SaleStatus.choices,
+        required=False
+    )
+    sub_total = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    tax = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    discount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    delivery_charge = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    paid_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    payment_status = serializers.ChoiceField(
+        choices=PaymentStatus.choices,
         required=False
     )
     notes = serializers.CharField(
@@ -106,3 +135,23 @@ class SaleSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['grand_total', 'company',
                             'created_by', 'created_at', 'updated_at']
+    
+    def validate_paid_amount(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Paid amount cannot be negative.")
+        return value
+    
+    def validate_discount(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Discount cannot be negative.")
+        return value
+    
+    def validate_tax(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Tax cannot be negative.")
+        return value
+    
+    def validate_delivery_charge(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Delivery charge cannot be negative.")
+        return value
