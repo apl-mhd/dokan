@@ -30,7 +30,8 @@ class PurchaseAPIView(APIView):
                 Purchase.objects.filter(company=request.company)
                 .select_related('supplier', 'warehouse', 'created_by', 'company')
                 .prefetch_related(
-                    Prefetch('items', queryset=PurchaseItem.objects.select_related('product', 'unit'))
+                    Prefetch('items', queryset=PurchaseItem.objects.select_related(
+                        'product', 'unit'))
                 ),
                 pk=pk
             )
@@ -41,9 +42,10 @@ class PurchaseAPIView(APIView):
             purchases = Purchase.objects.filter(company=request.company).select_related(
                 'supplier', 'warehouse', 'created_by', 'company'
             ).prefetch_related(
-                Prefetch('items', queryset=PurchaseItem.objects.select_related('product', 'unit'))
+                Prefetch('items', queryset=PurchaseItem.objects.select_related(
+                    'product', 'unit'))
             )
-            
+
             # Apply search filter
             search_query = request.query_params.get('search', '').strip()
             if search_query:
@@ -59,16 +61,23 @@ class PurchaseAPIView(APIView):
                 except (ValueError, TypeError):
                     pass
                 purchases = purchases.filter(search_filter)
-            
+
             # Apply status filter
             status_filter = request.query_params.get('status', '').strip()
             if status_filter:
                 purchases = purchases.filter(status=status_filter)
-            
+
+            # Apply payment_status filter
+            payment_status_filter = request.query_params.get(
+                'payment_status', '').strip()
+            if payment_status_filter:
+                purchases = purchases.filter(
+                    payment_status=payment_status_filter)
+
             # Apply pagination if needed
             page = request.query_params.get('page', None)
             page_size = request.query_params.get('page_size', None)
-            
+
             if page and page_size:
                 try:
                     page = int(page)
@@ -77,7 +86,7 @@ class PurchaseAPIView(APIView):
                     end = start + page_size
                     total_count = purchases.count()
                     purchases = purchases.order_by('-created_at')[start:end]
-                    
+
                     serializer = PurchaseSerializer(purchases, many=True)
                     return Response({
                         "message": "Purchases retrieved successfully",
@@ -90,7 +99,7 @@ class PurchaseAPIView(APIView):
                 except (ValueError, TypeError):
                     # Invalid pagination params, return all
                     pass
-            
+
             # Return all if no pagination
             purchases = purchases.order_by('-created_at')
             serializer = PurchaseSerializer(purchases, many=True)
@@ -108,20 +117,21 @@ class PurchaseAPIView(APIView):
 
         data = request.data
         user = request.user if request.user.is_authenticated else None
-        
+
         if not user:
             return Response({
                 "error": "Authentication required"
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            purchase = PurchaseService.create_purchase(data, user, request.company)
+            purchase = PurchaseService.create_purchase(
+                data, user, request.company)
             serializer = PurchaseSerializer(purchase)
             return Response({
                 "message": "Purchase created successfully",
                 "data": serializer.data
             }, status=status.HTTP_201_CREATED)
-        
+
         except ValidationError as e:
             error_details = e.detail if hasattr(e, 'detail') else str(e)
             return Response({
@@ -133,7 +143,7 @@ class PurchaseAPIView(APIView):
             return Response({
                 "error": "Database integrity error",
                 "details": str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)  
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
             return Response({
@@ -162,7 +172,7 @@ class PurchaseAPIView(APIView):
             Purchase.objects.filter(company=request.company),
             pk=pk
         )
-        
+
         if purchase.status == 'completed':
             return Response({
                 "error": "Cannot edit a completed purchase"
@@ -171,14 +181,15 @@ class PurchaseAPIView(APIView):
         data = request.data
         data['id'] = pk  # Add id to data for serializer validation
         user = request.user if request.user.is_authenticated else None
-        
+
         if not user:
             return Response({
                 "error": "Authentication required"
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            purchase = PurchaseService.update_purchase(data, user, request.company)
+            purchase = PurchaseService.update_purchase(
+                data, user, request.company)
             serializer = PurchaseSerializer(purchase)
             return Response({
                 "message": "Purchase updated successfully",
@@ -220,7 +231,8 @@ class PurchaseAPIView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            purchase = get_object_or_404(Purchase.objects.filter(company=request.company), pk=pk)
+            purchase = get_object_or_404(
+                Purchase.objects.filter(company=request.company), pk=pk)
             purchase.delete()
             return Response({
                 "message": "Purchase deleted successfully"
@@ -238,11 +250,27 @@ class PurchaseInvoicePDFView(APIView):
     Generate and download PDF invoice for a purchase.
     Company-filtered: can only access purchases belonging to user's company.
     """
+
     def get(self, request, pk):
+        """
+        Generate and return PDF invoice for a purchase.
+
+        Args:
+            request: HTTP request object
+            pk: Primary key of the purchase
+
+        Returns:
+            HttpResponse with PDF content or error response
+        """
         if not hasattr(request, 'company') or not request.company:
             return Response({
                 "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
             }, status=status.HTTP_403_FORBIDDEN)
+
+        if not pk:
+            return Response({
+                "error": "Purchase ID is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Get purchase with all related data
@@ -250,15 +278,16 @@ class PurchaseInvoicePDFView(APIView):
                 Purchase.objects.filter(company=request.company)
                 .select_related('supplier', 'warehouse', 'company', 'created_by')
                 .prefetch_related(
-                    Prefetch('items', queryset=PurchaseItem.objects.select_related('product', 'unit'))
+                    Prefetch('items', queryset=PurchaseItem.objects.select_related(
+                        'product', 'unit'))
                 ),
                 pk=pk
             )
-            
+
             # Generate PDF
             pdf_generator = PurchaseInvoicePDF(purchase)
             return pdf_generator.generate()
-            
+
         except Exception as e:
             return Response({
                 "error": "Failed to generate PDF",
