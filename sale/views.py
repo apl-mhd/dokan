@@ -71,8 +71,7 @@ class SaleAPIView(APIView):
             payment_status_filter = request.query_params.get(
                 'payment_status', '').strip()
             if payment_status_filter:
-                sales = sales.filter(
-                    payment_status=payment_status_filter)
+                sales = sales.filter(payment_status=payment_status_filter)
 
             # Apply pagination if needed
             page = request.query_params.get('page', None)
@@ -124,8 +123,7 @@ class SaleAPIView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            sale = SaleService.create_sale(
-                data, user, request.company)
+            sale = SaleService.create_sale(data, user, request.company)
             serializer = SaleSerializer(sale)
             return Response({
                 "message": "Sale created successfully",
@@ -155,7 +153,7 @@ class SaleAPIView(APIView):
         """
         Update an existing sale.
         Company-aware: can only update sales belonging to user's company.
-        Prevents editing completed sales.
+        Prevents editing delivered sales.
         """
         if not hasattr(request, 'company') or not request.company:
             return Response({
@@ -167,7 +165,7 @@ class SaleAPIView(APIView):
                 "error": "Sale ID is required"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if sale exists and is not completed
+        # Check if sale exists and is not delivered
         sale = get_object_or_404(
             Sale.objects.filter(company=request.company),
             pk=pk
@@ -188,8 +186,7 @@ class SaleAPIView(APIView):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            sale = SaleService.update_sale(
-                data, user, request.company)
+            sale = SaleService.update_sale(data, user, request.company)
             serializer = SaleSerializer(sale)
             return Response({
                 "message": "Sale updated successfully",
@@ -231,8 +228,8 @@ class SaleAPIView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            sale = get_object_or_404(
-                Sale.objects.filter(company=request.company), pk=pk)
+            sale = get_object_or_404(Sale.objects.filter(
+                company=request.company), pk=pk)
             sale.delete()
             return Response({
                 "message": "Sale deleted successfully"
@@ -251,26 +248,16 @@ class SaleInvoicePDFView(APIView):
     Company-filtered: can only access sales belonging to user's company.
     """
 
+    return Response({
+        "error": "Failed to generate PDF",
+        "details": str(e)
+    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     def get(self, request, pk):
-        """
-        Generate and return PDF invoice for a sale.
-
-        Args:
-            request: HTTP request object
-            pk: Primary key of the sale
-
-        Returns:
-            HttpResponse with PDF content or error response
-        """
         if not hasattr(request, 'company') or not request.company:
             return Response({
                 "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
             }, status=status.HTTP_403_FORBIDDEN)
-
-        if not pk:
-            return Response({
-                "error": "Sale ID is required"
-            }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Get sale with all related data
