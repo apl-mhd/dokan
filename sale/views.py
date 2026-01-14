@@ -248,11 +248,6 @@ class SaleInvoicePDFView(APIView):
     Company-filtered: can only access sales belonging to user's company.
     """
 
-    return Response({
-        "error": "Failed to generate PDF",
-        "details": str(e)
-    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     def get(self, request, pk):
         if not hasattr(request, 'company') or not request.company:
             return Response({
