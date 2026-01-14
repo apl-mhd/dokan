@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework import status, permissions
+from django.db.models import Q
 from .models import Category, Unit, UnitCategory
 from .serializers import (
     CategorySerializer,
@@ -36,7 +37,15 @@ class CategoryViewSet(viewsets.ModelViewSet):
             serializer.save()
 
     def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
+        queryset = self.get_queryset()
+
+        # Handle search parameter
+        search = request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) | Q(description__icontains=search)
+            )
+
         serializer = self.get_serializer(queryset, many=True)
         return Response({
             "message": "Categories retrieved successfully",
