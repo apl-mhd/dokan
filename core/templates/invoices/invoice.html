@@ -358,12 +358,7 @@
           </tr>
           <tr>
             <td>Status:</td>
-            <td>
-              {% if invoice.paid_amount and invoice.due_amount %} {% if
-              invoice.due_amount > 0 %}Partial{% else %}Paid{% endif %} {% elif
-              invoice.due_amount and invoice.due_amount > 0 %} Due {% else %}
-              Paid {% endif %}
-            </td>
+            <td>{{ invoice.status|default:"Paid" }}</td>
           </tr>
         </table>
       </div>
@@ -373,15 +368,19 @@
       <!-- Customer / Supplier Information -->
       <div class="party-section">
         <div class="party-label">
-          {% if invoice.invoice_type == "purchase" or invoice.invoice_type ==
+          
+          {% comment %} <p>apel
+            {{invoice.invoice_type}}
+          </p> {% endcomment %}
+          {% comment %} {% if invoice.invoice_type == "purchase" or invoice.invoice_type ==
           "Purchase" %} Supplier Information: {% else %} Customer Information:
-          {% endif %}
+          {% endif %} {% endcomment %}
         </div>
         <div class="party-info">
           <div class="party-name">{{ party.name|default:"N/A" }}</div>
           <div class="party-details">
-            {% if party.address %}{{ party.address }}<br />{% endif %} {% if
-            party.phone %}Phone: {{ party.phone }}{% endif %}
+            {% comment %} {% if party.address %}{{ party.address }}<br />{% endif %} {% if
+            party.phone %}Phone: {{ party.phone }}{% endif %} {% endcomment %}
           </div>
         </div>
       </div>

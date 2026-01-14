@@ -1,19 +1,26 @@
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from io import BytesIO
+import logging
 
+logger = logging.getLogger(__name__)
+
+# Initialize both variables
+WEASYPRINT_AVAILABLE = False
+XHTML2PDF_AVAILABLE = False
 
 try:
     from weasyprint import HTML
     WEASYPRINT_AVAILABLE = True
+    logger.info("WeasyPrint is available for PDF generation")
 except ImportError:
     try:
         from xhtml2pdf import pisa
         XHTML2PDF_AVAILABLE = True
-        WEASYPRINT_AVAILABLE = False
+        logger.info("xhtml2pdf is available for PDF generation")
     except ImportError:
-        WEASYPRINT_AVAILABLE = False
-        XHTML2PDF_AVAILABLE = False
+        logger.warning(
+            "Neither WeasyPrint nor xhtml2pdf is available. PDF generation will fail.")
 
 
 class SaleInvoicePDF:
@@ -39,8 +46,17 @@ class SaleInvoicePDF:
         tax_rate = None
         if self.sale.tax and self.sale.sub_total:
             try:
-                tax_rate = (self.sale.tax / self.sale.sub_total) * 100
-            except (ZeroDivisionError, TypeError):
+                from decimal import Decimal
+                if isinstance(self.sale.tax, Decimal) and isinstance(self.sale.sub_total, Decimal):
+                    if self.sale.sub_total > 0:
+                        tax_rate = float(
+                            (self.sale.tax / self.sale.sub_total) * 100)
+                else:
+                    if self.sale.sub_total > 0:
+                        tax_rate = float(
+                            (float(self.sale.tax) / float(self.sale.sub_total)) * 100)
+            except (ZeroDivisionError, TypeError, ValueError) as e:
+                logger.warning(f"Error calculating tax rate: {str(e)}")
                 tax_rate = None
 
         # Prepare invoice object for template
@@ -83,7 +99,11 @@ class SaleInvoicePDF:
 
         # Prepare items
         items = []
-        for item in self.sale.items.all():
+        sale_items = self.sale.items.all()
+        if not sale_items.exists():
+            raise ValueError("Sale must have at least one item")
+
+        for item in sale_items:
             if not item.product:
                 raise ValueError(f"Sale item {item.id} must have a product")
             if not item.unit:
@@ -117,34 +137,74 @@ class SaleInvoicePDF:
                 "Please install one: pip install weasyprint or pip install xhtml2pdf"
             )
 
-        # Prepare context
-        context = self._prepare_context()
+        try:
+            # Prepare context
+            context = self._prepare_context()
 
-        # Render HTML template
-        html_string = render_to_string('invoices/invoice.html', context)
+            # Render HTML template
+            try:
+                html_string = render_to_string(
+                    'invoices/invoice.html', context)
+                if not html_string or len(html_string.strip()) == 0:
+                    raise ValueError("Template rendered empty HTML")
+            except Exception as e:
+                import traceback
+                error_traceback = traceback.format_exc()
+                logger.error(
+                    f"Error rendering template: {str(e)}\n{error_traceback}")
+                raise ValueError(
+                    f"Failed to render invoice template: {str(e)}")
 
-        # Convert HTML to PDF
-        buffer = BytesIO()
+            # Convert HTML to PDF
+            buffer = BytesIO()
 
-        if WEASYPRINT_AVAILABLE:
-            HTML(string=html_string).write_pdf(buffer)
-        else:
-            # Use xhtml2pdf
-            pisa_status = pisa.CreatePDF(
-                html_string,
-                dest=buffer
-            )
-            if pisa_status.err:
-                raise Exception("Error generating PDF with xhtml2pdf")
+            if WEASYPRINT_AVAILABLE:
+                try:
+                    # Generate PDF with WeasyPrint
+                    # base_url is optional but can help with relative URLs
+                    html_doc = HTML(string=html_string)
+                    html_doc.write_pdf(buffer)
+                except Exception as e:
+                    import traceback
+                    error_traceback = traceback.format_exc()
+                    logger.error(
+                        f"Error generating PDF with WeasyPrint: {str(e)}\n{error_traceback}")
+                    raise Exception(
+                        f"Error generating PDF with WeasyPrint: {str(e)}")
+            else:
+                # Use xhtml2pdf
+                try:
+                    pisa_status = pisa.CreatePDF(
+                        html_string,
+                        dest=buffer
+                    )
+                    if pisa_status.err:
+                        logger.error(
+                            f"Error generating PDF with xhtml2pdf: {pisa_status.err}")
+                        raise Exception(
+                            f"Error generating PDF with xhtml2pdf: {pisa_status.err}")
+                except Exception as e:
+                    logger.error(
+                        f"Error generating PDF with xhtml2pdf: {str(e)}")
+                    raise Exception(
+                        f"Error generating PDF with xhtml2pdf: {str(e)}")
 
-        buffer.seek(0)
-        pdf_value = buffer.getvalue()
-        buffer.close()
+            buffer.seek(0)
+            pdf_value = buffer.getvalue()
+            buffer.close()
 
-        # Create HTTP response
-        response = HttpResponse(content_type='application/pdf')
-        filename = f"invoice_{self.sale.invoice_number or self.sale.id}.pdf"
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        response.write(pdf_value)
+            # Validate PDF content
+            if not pdf_value or len(pdf_value) == 0:
+                raise ValueError("Generated PDF is empty")
 
-        return response
+            # Create HTTP response
+            response = HttpResponse(content_type='application/pdf')
+            filename = f"invoice_{self.sale.invoice_number or self.sale.id}.pdf"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            response['Content-Length'] = str(len(pdf_value))
+            response.write(pdf_value)
+
+            return response
+        except Exception as e:
+            logger.error(f"Error in PDF generation: {str(e)}", exc_info=True)
+            raise

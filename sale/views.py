@@ -2,6 +2,7 @@ from .models import Sale, SaleItem
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch, Q
+from django.conf import settings
 from product.models import Product
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -270,8 +271,29 @@ class SaleInvoicePDFView(APIView):
             pdf_generator = SaleInvoicePDF(sale)
             return pdf_generator.generate()
 
+        except ImportError as e:
+            # Handle missing PDF library
+            return Response({
+                "error": "PDF generation library not available",
+                "details": str(e),
+                "message": "Please install either 'weasyprint' or 'xhtml2pdf': pip install weasyprint"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except ValueError as e:
+            # Handle missing required data
+            return Response({
+                "error": "Invalid sale data",
+                "details": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
+            # Log the full error for debugging
+            import logging
+            import traceback
+            logger = logging.getLogger(__name__)
+            error_traceback = traceback.format_exc()
+            logger.error(
+                f"Error generating PDF for sale {pk}: {str(e)}\n{error_traceback}", exc_info=True)
             return Response({
                 "error": "Failed to generate PDF",
-                "details": str(e)
+                "details": str(e),
+                "traceback": error_traceback if settings.DEBUG else None
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
