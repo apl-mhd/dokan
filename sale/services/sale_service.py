@@ -315,9 +315,23 @@ class SaleService:
                 
                 sale.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
-                # Create accounting ledger entries (double-entry)
+                # Recreate accounting ledger entries
                 if sale.grand_total > 0:
+                    # Recreate sale ledger entry (Debit: Customer Receivable)
                     LedgerService.create_sale_ledger_entry(sale, company)
+                    
+                    # Create payment ledger entry if paid_amount > 0 (Credit: Customer Receivable)
+                    if paid_amount > 0:
+                        # Create payment-like object for ledger entry
+                        from types import SimpleNamespace
+                        payment_obj = SimpleNamespace(
+                            reference_number=sale.invoice_number or f"SAL-{sale.id}",
+                            amount=paid_amount,
+                            date=sale.invoice_date,
+                            notes=sale.notes or ""
+                        )
+                        LedgerService.create_payment_ledger_entry(payment_obj, company, sale.customer, payment_type='received', source_object=sale)
+                    
                     # Update customer balance
                     LedgerService.update_party_balance(sale.customer, company)
 
@@ -403,9 +417,23 @@ class SaleService:
                 
                 sale.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
-                # Create accounting ledger entries (double-entry)
+                # Create accounting ledger entries
                 if sale.grand_total > 0:
+                    # Create sale ledger entry (Debit: Customer Receivable)
                     LedgerService.create_sale_ledger_entry(sale, company)
+                    
+                    # Create payment ledger entry if paid_amount > 0 (Credit: Customer Receivable)
+                    if paid_amount > 0:
+                        # Create payment-like object for ledger entry
+                        from types import SimpleNamespace
+                        payment_obj = SimpleNamespace(
+                            reference_number=sale.invoice_number or f"SAL-{sale.id}",
+                            amount=paid_amount,
+                            date=sale.invoice_date,
+                            notes=sale.notes or ""
+                        )
+                        LedgerService.create_payment_ledger_entry(payment_obj, company, sale.customer, payment_type='received', source_object=sale)
+                    
                     # Update customer balance
                     LedgerService.update_party_balance(sale.customer, company)
 

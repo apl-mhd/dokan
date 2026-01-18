@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Supplier
 from .serializer import SupplierSerializer
+from accounting.services.ledger_service import LedgerService
 
 
 class SupplierViewSet(viewsets.ModelViewSet):
@@ -29,7 +30,15 @@ class SupplierViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import ValidationError
             raise ValidationError(
                 {'company': 'Company context is required. Please ensure you are associated with a company.'})
-        serializer.save(company=company, is_supplier=True)
+        supplier = serializer.save(company=company, is_supplier=True)
+
+        # Create opening balance ledger entry if opening_balance > 0
+        opening_balance = serializer.validated_data.get(
+            'opening_balance', 0) or supplier.opening_balance
+        if opening_balance:
+            LedgerService.create_or_update_opening_balance_entry(
+                supplier, company, opening_balance)
+            LedgerService.update_party_balance(supplier, company)
 
     def list(self, request, *args, **kwargs):
         """Custom list response format"""
@@ -67,6 +76,21 @@ class SupplierViewSet(viewsets.ModelViewSet):
             instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
+
+        # Refresh instance to get updated opening_balance
+        instance.refresh_from_db()
+        supplier = instance
+
+        # Update opening balance ledger entry if opening_balance is set
+        company = getattr(request, 'company', None)
+        if company:
+            opening_balance = serializer.validated_data.get('opening_balance')
+            if opening_balance is not None:
+                # Use updated opening_balance from instance
+                LedgerService.create_or_update_opening_balance_entry(
+                    supplier, company, supplier.opening_balance)
+                LedgerService.update_party_balance(supplier, company)
+
         return Response({
             "message": "Supplier updated successfully",
             "data": serializer.data

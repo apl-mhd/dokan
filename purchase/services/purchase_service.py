@@ -312,9 +312,23 @@ class PurchaseService:
                 
                 purchase.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
-                # Recreate accounting ledger entries (double-entry)
+                # Recreate accounting ledger entries
                 if purchase.grand_total > 0:
+                    # Recreate purchase ledger entry (Debit: Supplier Payable)
                     LedgerService.create_purchase_ledger_entry(purchase, company)
+                    
+                    # Create payment ledger entry if paid_amount > 0 (Credit: Supplier Payable)
+                    if paid_amount > 0:
+                        # Create payment-like object for ledger entry
+                        from types import SimpleNamespace
+                        payment_obj = SimpleNamespace(
+                            reference_number=purchase.invoice_number or f"PUR-{purchase.id}",
+                            amount=paid_amount,
+                            date=purchase.invoice_date,
+                            notes=purchase.notes or ""
+                        )
+                        LedgerService.create_payment_ledger_entry(payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
+                    
                     # Update supplier balance
                     LedgerService.update_party_balance(purchase.supplier, company)
 
@@ -406,9 +420,23 @@ class PurchaseService:
                 
                 purchase.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
-                # Create accounting ledger entries (double-entry)
+                # Create accounting ledger entries
                 if purchase.grand_total > 0:
+                    # Create purchase ledger entry (Debit: Supplier Payable)
                     LedgerService.create_purchase_ledger_entry(purchase, company)
+                    
+                    # Create payment ledger entry if paid_amount > 0 (Credit: Supplier Payable)
+                    if paid_amount > 0:
+                        # Create payment-like object for ledger entry
+                        from types import SimpleNamespace
+                        payment_obj = SimpleNamespace(
+                            reference_number=purchase.invoice_number or f"PUR-{purchase.id}",
+                            amount=paid_amount,
+                            date=purchase.invoice_date,
+                            notes=purchase.notes or ""
+                        )
+                        LedgerService.create_payment_ledger_entry(payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
+                    
                     # Update supplier balance
                     LedgerService.update_party_balance(purchase.supplier, company)
 
