@@ -14,6 +14,7 @@ from sale.serializers import (
 from rest_framework.exceptions import ValidationError
 from core.services.invoice_number import InvoiceNumberGenerator
 from core.models import DocumentType
+from accounting.services.ledger_service import LedgerService
 
 
 class SaleService:
@@ -267,6 +268,9 @@ class SaleService:
                 SaleService._validate_company_access(
                     company, warehouse=warehouse)
 
+                # Delete old ledger entries before updating
+                LedgerService.delete_ledger_entries_for_object(sale, company)
+
                 # Revert stock for old items first (add back to stock)
                 SaleService._revert_old_items_stock(
                     sale, old_items, warehouse, company)
@@ -310,6 +314,12 @@ class SaleService:
                     sale.payment_status = SaleService._calculate_payment_status(paid_amount, sale.grand_total)
                 
                 sale.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+
+                # Create accounting ledger entries (double-entry)
+                if sale.grand_total > 0:
+                    LedgerService.create_sale_ledger_entry(sale, company)
+                    # Update customer balance
+                    LedgerService.update_party_balance(sale.customer, company)
 
                 return sale
 
@@ -392,6 +402,12 @@ class SaleService:
                     sale.payment_status = SaleService._calculate_payment_status(paid_amount, sale.grand_total)
                 
                 sale.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+
+                # Create accounting ledger entries (double-entry)
+                if sale.grand_total > 0:
+                    LedgerService.create_sale_ledger_entry(sale, company)
+                    # Update customer balance
+                    LedgerService.update_party_balance(sale.customer, company)
 
                 return sale
 

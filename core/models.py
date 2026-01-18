@@ -29,6 +29,18 @@ class Party(models.Model):
     def __str__(self):
         return f"{self.name} ({self.phone})"
 
+    def update_balance(self):
+        
+        from django.db.models import Sum
+        # Sum all debits and credits from the Ledger table
+        totals = self.ledger_entries.aggregate(dr=Sum('debit'), cr=Sum('credit'))
+        dr = totals['dr'] or 0
+        cr = totals['cr'] or 0
+        
+        # New Balance = Opening + (Total Sales - Total Payments)
+        self.balance = self.opening_balance + dr - cr
+        self.save(update_fields=['balance'])
+
 
 # class Person(models.Model):
 #     name = models.CharField(max_length=255)

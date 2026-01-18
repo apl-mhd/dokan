@@ -15,6 +15,7 @@ from purchase.serializers import (
 from rest_framework.exceptions import ValidationError
 from core.services.invoice_number import InvoiceNumberGenerator
 from core.models import DocumentType
+from accounting.services.ledger_service import LedgerService
 
 
 class PurchaseService:
@@ -264,6 +265,9 @@ class PurchaseService:
                 PurchaseService._validate_company_access(
                     company, warehouse=warehouse)
 
+                # Delete old ledger entries before updating
+                LedgerService.delete_ledger_entries_for_object(purchase, company)
+
                 # Revert stock for old items first
                 PurchaseService._revert_old_items_stock(
                     purchase, old_items, warehouse, company)
@@ -307,6 +311,12 @@ class PurchaseService:
                     purchase.payment_status = PurchaseService._calculate_payment_status(paid_amount, purchase.grand_total)
                 
                 purchase.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+
+                # Recreate accounting ledger entries (double-entry)
+                if purchase.grand_total > 0:
+                    LedgerService.create_purchase_ledger_entry(purchase, company)
+                    # Update supplier balance
+                    LedgerService.update_party_balance(purchase.supplier, company)
 
                 return purchase
 
@@ -395,6 +405,12 @@ class PurchaseService:
                     purchase.payment_status = PurchaseService._calculate_payment_status(paid_amount, purchase.grand_total)
                 
                 purchase.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+
+                # Create accounting ledger entries (double-entry)
+                if purchase.grand_total > 0:
+                    LedgerService.create_purchase_ledger_entry(purchase, company)
+                    # Update supplier balance
+                    LedgerService.update_party_balance(purchase.supplier, company)
 
                 return purchase
 
