@@ -2,21 +2,46 @@ from django.db import models
 from company.models import Company
 from datetime import datetime
 
-# Create your models here.
 
-
-class Person(models.Model):
-    name = models.CharField(max_length=255)
+class Party(models.Model):
+    name = models.CharField(max_length=255, db_index=True) # Index for faster search
     company = models.ForeignKey(Company, on_delete=models.PROTECT)
+    phone = models.CharField(max_length=20, blank=True, null=True) 
     email = models.EmailField(blank=True, null=True)
-    phone = models.CharField(blank=True,  null=True, max_length=20)
     address = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    image = models.ImageField(upload_to='parties/', blank=True, null=True)
+    opening_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    credit_limit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    is_customer = models.BooleanField(default=False)
+    is_supplier = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = models.Manager()
+
     class Meta:
-        abstract = True
+        unique_together = ('company', 'phone')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} ({self.phone})"
+
+
+# class Person(models.Model):
+#     name = models.CharField(max_length=255)
+#     company = models.ForeignKey(Company, on_delete=models.PROTECT)
+#     email = models.EmailField(blank=True, null=True)
+#     phone = models.CharField(blank=True,  null=True, max_length=20)
+#     address = models.TextField(blank=True, null=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+#     is_active = models.BooleanField(default=True)
+
+#     class Meta:
+#         abstract = True
 
 
 class DocumentType(models.TextChoices):

@@ -1,11 +1,16 @@
 from django.db import models
-from core.models import Person
+from core.models import Party
 
 # Create your models here.
+class SupplierManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(is_supplier=True)
 
+class Supplier(Party):
+    objects = SupplierManager()
+    class Meta:
+        proxy = True
 
-class Supplier(Person):
-    pass
-
-    def __str__(self):
-        return self.name
+    def save(self, *args, **kwargs):
+        self.is_supplier = True
+        super().save(*args, **kwargs)

@@ -1,9 +1,17 @@
 from django.contrib import admin
-from core.models import DocumentSequence
+from core.models import DocumentSequence, Party
 
-# admin.site.register([
-#     DocumentSequence,
-# ])
+# @admin.register(Party)
+# class PartyAdmin(admin.ModelAdmin):
+#     list_display = ('name', 'party_type', 'balance')
+#     list_filter = ('party_type',)
+#     search_fields = ('name',)
+#     readonly_fields = ('created_at', 'updated_at')
+#     ordering = ('name',)
+
+admin.site.register([
+    Party,
+])
 
 @admin.register(DocumentSequence)
 class DocumentSequenceAdmin(admin.ModelAdmin):
