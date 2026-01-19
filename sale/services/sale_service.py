@@ -218,7 +218,7 @@ class SaleService:
                 )
 
         return sale_items, sub_total
-    
+
     @staticmethod
     def _calculate_payment_status(paid_amount, grand_total):
         """Calculate payment status based on paid_amount and grand_total"""
@@ -296,30 +296,32 @@ class SaleService:
                 )
 
                 SaleItem.objects.bulk_create(sale_items)
-                
+
                 # Calculate totals
                 sale.sub_total = sub_total
                 sale.tax = Decimal(str(validated_data.get('tax', 0.00)))
-                sale.discount = Decimal(str(validated_data.get('discount', 0.00)))
-                sale.delivery_charge = Decimal(str(validated_data.get('delivery_charge', 0.00)))
+                sale.discount = Decimal(
+                    str(validated_data.get('discount', 0.00)))
+                sale.delivery_charge = Decimal(
+                    str(validated_data.get('delivery_charge', 0.00)))
                 sale.grand_total = sub_total + sale.tax + sale.delivery_charge - sale.discount
-                
+
                 # Handle payment fields
-                paid_amount = Decimal(str(validated_data.get('paid_amount', 0.00)))
+                paid_amount = Decimal(
+                    str(validated_data.get('paid_amount', 0.00)))
                 sale.paid_amount = paid_amount
-                if 'payment_status' in validated_data:
-                    sale.payment_status = validated_data['payment_status']
-                else:
-                    # Auto-calculate payment status if not provided
-                    sale.payment_status = SaleService._calculate_payment_status(paid_amount, sale.grand_total)
-                
-                sale.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+                # Always auto-calculate payment status (never trust client-provided value)
+                sale.payment_status = SaleService._calculate_payment_status(
+                    paid_amount, sale.grand_total)
+
+                sale.save(update_fields=["sub_total", "tax", "discount",
+                          "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
                 # Recreate accounting ledger entries
                 if sale.grand_total > 0:
                     # Recreate sale ledger entry (Debit: Customer Receivable)
                     LedgerService.create_sale_ledger_entry(sale, company)
-                    
+
                     # Create payment ledger entry if paid_amount > 0 (Credit: Customer Receivable)
                     if paid_amount > 0:
                         # Create payment-like object for ledger entry
@@ -330,8 +332,9 @@ class SaleService:
                             date=sale.invoice_date,
                             notes=sale.notes or ""
                         )
-                        LedgerService.create_payment_ledger_entry(payment_obj, company, sale.customer, payment_type='received', source_object=sale)
-                    
+                        LedgerService.create_payment_ledger_entry(
+                            payment_obj, company, sale.customer, payment_type='received', source_object=sale)
+
                     # Update customer balance
                     LedgerService.update_party_balance(sale.customer, company)
 
@@ -398,30 +401,32 @@ class SaleService:
                 )
 
                 SaleItem.objects.bulk_create(sale_items)
-                
+
                 # Calculate totals
                 sale.sub_total = sub_total
                 sale.tax = Decimal(str(validated_data.get('tax', 0.00)))
-                sale.discount = Decimal(str(validated_data.get('discount', 0.00)))
-                sale.delivery_charge = Decimal(str(validated_data.get('delivery_charge', 0.00)))
+                sale.discount = Decimal(
+                    str(validated_data.get('discount', 0.00)))
+                sale.delivery_charge = Decimal(
+                    str(validated_data.get('delivery_charge', 0.00)))
                 sale.grand_total = sub_total + sale.tax + sale.delivery_charge - sale.discount
-                
+
                 # Handle payment fields
-                paid_amount = Decimal(str(validated_data.get('paid_amount', 0.00)))
+                paid_amount = Decimal(
+                    str(validated_data.get('paid_amount', 0.00)))
                 sale.paid_amount = paid_amount
-                if 'payment_status' in validated_data:
-                    sale.payment_status = validated_data['payment_status']
-                else:
-                    # Auto-calculate payment status if not provided
-                    sale.payment_status = SaleService._calculate_payment_status(paid_amount, sale.grand_total)
-                
-                sale.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+                # Always auto-calculate payment status (never trust client-provided value)
+                sale.payment_status = SaleService._calculate_payment_status(
+                    paid_amount, sale.grand_total)
+
+                sale.save(update_fields=["sub_total", "tax", "discount",
+                          "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
                 # Create accounting ledger entries
                 if sale.grand_total > 0:
                     # Create sale ledger entry (Debit: Customer Receivable)
                     LedgerService.create_sale_ledger_entry(sale, company)
-                    
+
                     # Create payment ledger entry if paid_amount > 0 (Credit: Customer Receivable)
                     if paid_amount > 0:
                         # Create payment-like object for ledger entry
@@ -432,8 +437,9 @@ class SaleService:
                             date=sale.invoice_date,
                             notes=sale.notes or ""
                         )
-                        LedgerService.create_payment_ledger_entry(payment_obj, company, sale.customer, payment_type='received', source_object=sale)
-                    
+                        LedgerService.create_payment_ledger_entry(
+                            payment_obj, company, sale.customer, payment_type='received', source_object=sale)
+
                     # Update customer balance
                     LedgerService.update_party_balance(sale.customer, company)
 

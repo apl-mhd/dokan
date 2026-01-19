@@ -7,12 +7,13 @@ class SaleItemOutputSerializer(serializers.ModelSerializer):
     """Serializer for sale items in output (read-only)"""
     product_name = serializers.CharField(source='product.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
-    
+
     class Meta:
         model = SaleItem
         fields = ['id', 'product', 'product_name', 'quantity', 'unit', 'unit_name',
                   'unit_price', 'line_total', 'created_at']
-        read_only_fields = ['line_total', 'created_at', 'product_name', 'unit_name']
+        read_only_fields = ['line_total',
+                            'created_at', 'product_name', 'unit_name']
 
 
 class SaleItemInputSerializer(serializers.Serializer):
@@ -56,11 +57,6 @@ class SaleCreateInputSerializer(serializers.Serializer):
         max_digits=10, decimal_places=2, required=False, default=0.00)
     paid_amount = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=False, default=0.00)
-    payment_status = serializers.ChoiceField(
-        choices=PaymentStatus.choices,
-        default=PaymentStatus.UNPAID,
-        required=False
-    )
     notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
     invoice_date = serializers.DateField(required=False)
@@ -89,10 +85,6 @@ class SaleUpdateInputSerializer(serializers.Serializer):
         max_digits=10, decimal_places=2, required=False)
     paid_amount = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=False)
-    payment_status = serializers.ChoiceField(
-        choices=PaymentStatus.choices,
-        required=False
-    )
     notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
 
@@ -135,23 +127,25 @@ class SaleSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['grand_total', 'company',
                             'created_by', 'created_at', 'updated_at']
-    
+
     def validate_paid_amount(self, value):
         if value < 0:
-            raise serializers.ValidationError("Paid amount cannot be negative.")
+            raise serializers.ValidationError(
+                "Paid amount cannot be negative.")
         return value
-    
+
     def validate_discount(self, value):
         if value < 0:
             raise serializers.ValidationError("Discount cannot be negative.")
         return value
-    
+
     def validate_tax(self, value):
         if value < 0:
             raise serializers.ValidationError("Tax cannot be negative.")
         return value
-    
+
     def validate_delivery_charge(self, value):
         if value < 0:
-            raise serializers.ValidationError("Delivery charge cannot be negative.")
+            raise serializers.ValidationError(
+                "Delivery charge cannot be negative.")
         return value

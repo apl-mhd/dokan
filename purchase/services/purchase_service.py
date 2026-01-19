@@ -215,7 +215,7 @@ class PurchaseService:
                 )
 
         return purchase_items, sub_total
-    
+
     @staticmethod
     def _calculate_payment_status(paid_amount, grand_total):
         """Calculate payment status based on paid_amount and grand_total"""
@@ -266,7 +266,8 @@ class PurchaseService:
                     company, warehouse=warehouse)
 
                 # Delete old ledger entries before updating
-                LedgerService.delete_ledger_entries_for_object(purchase, company)
+                LedgerService.delete_ledger_entries_for_object(
+                    purchase, company)
 
                 # Revert stock for old items first
                 PurchaseService._revert_old_items_stock(
@@ -293,30 +294,34 @@ class PurchaseService:
                 )
 
                 PurchaseItem.objects.bulk_create(purchase_items)
-                
+
                 # Calculate totals
                 purchase.sub_total = sub_total
                 purchase.tax = Decimal(str(validated_data.get('tax', 0.00)))
-                purchase.discount = Decimal(str(validated_data.get('discount', 0.00)))
-                purchase.delivery_charge = Decimal(str(validated_data.get('delivery_charge', 0.00)))
-                purchase.grand_total = sub_total + purchase.tax + purchase.delivery_charge - purchase.discount
-                
+                purchase.discount = Decimal(
+                    str(validated_data.get('discount', 0.00)))
+                purchase.delivery_charge = Decimal(
+                    str(validated_data.get('delivery_charge', 0.00)))
+                purchase.grand_total = sub_total + purchase.tax + \
+                    purchase.delivery_charge - purchase.discount
+
                 # Handle payment fields
-                paid_amount = Decimal(str(validated_data.get('paid_amount', 0.00)))
+                paid_amount = Decimal(
+                    str(validated_data.get('paid_amount', 0.00)))
                 purchase.paid_amount = paid_amount
-                if 'payment_status' in validated_data:
-                    purchase.payment_status = validated_data['payment_status']
-                else:
-                    # Auto-calculate payment status if not provided
-                    purchase.payment_status = PurchaseService._calculate_payment_status(paid_amount, purchase.grand_total)
-                
-                purchase.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+                # Always auto-calculate payment status (never trust client-provided value)
+                purchase.payment_status = PurchaseService._calculate_payment_status(
+                    paid_amount, purchase.grand_total)
+
+                purchase.save(update_fields=[
+                              "sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
                 # Recreate accounting ledger entries
                 if purchase.grand_total > 0:
                     # Recreate purchase ledger entry (Debit: Supplier Payable)
-                    LedgerService.create_purchase_ledger_entry(purchase, company)
-                    
+                    LedgerService.create_purchase_ledger_entry(
+                        purchase, company)
+
                     # Create payment ledger entry if paid_amount > 0 (Credit: Supplier Payable)
                     if paid_amount > 0:
                         # Create payment-like object for ledger entry
@@ -327,10 +332,12 @@ class PurchaseService:
                             date=purchase.invoice_date,
                             notes=purchase.notes or ""
                         )
-                        LedgerService.create_payment_ledger_entry(payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
-                    
+                        LedgerService.create_payment_ledger_entry(
+                            payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
+
                     # Update supplier balance
-                    LedgerService.update_party_balance(purchase.supplier, company)
+                    LedgerService.update_party_balance(
+                        purchase.supplier, company)
 
                 return purchase
 
@@ -401,30 +408,34 @@ class PurchaseService:
                 )
 
                 PurchaseItem.objects.bulk_create(purchase_items)
-                
+
                 # Calculate totals
                 purchase.sub_total = sub_total
                 purchase.tax = Decimal(str(validated_data.get('tax', 0.00)))
-                purchase.discount = Decimal(str(validated_data.get('discount', 0.00)))
-                purchase.delivery_charge = Decimal(str(validated_data.get('delivery_charge', 0.00)))
-                purchase.grand_total = sub_total + purchase.tax + purchase.delivery_charge - purchase.discount
-                
+                purchase.discount = Decimal(
+                    str(validated_data.get('discount', 0.00)))
+                purchase.delivery_charge = Decimal(
+                    str(validated_data.get('delivery_charge', 0.00)))
+                purchase.grand_total = sub_total + purchase.tax + \
+                    purchase.delivery_charge - purchase.discount
+
                 # Handle payment fields
-                paid_amount = Decimal(str(validated_data.get('paid_amount', 0.00)))
+                paid_amount = Decimal(
+                    str(validated_data.get('paid_amount', 0.00)))
                 purchase.paid_amount = paid_amount
-                if 'payment_status' in validated_data:
-                    purchase.payment_status = validated_data['payment_status']
-                else:
-                    # Auto-calculate payment status if not provided
-                    purchase.payment_status = PurchaseService._calculate_payment_status(paid_amount, purchase.grand_total)
-                
-                purchase.save(update_fields=["sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+                # Always auto-calculate payment status (never trust client-provided value)
+                purchase.payment_status = PurchaseService._calculate_payment_status(
+                    paid_amount, purchase.grand_total)
+
+                purchase.save(update_fields=[
+                              "sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
                 # Create accounting ledger entries
                 if purchase.grand_total > 0:
                     # Create purchase ledger entry (Debit: Supplier Payable)
-                    LedgerService.create_purchase_ledger_entry(purchase, company)
-                    
+                    LedgerService.create_purchase_ledger_entry(
+                        purchase, company)
+
                     # Create payment ledger entry if paid_amount > 0 (Credit: Supplier Payable)
                     if paid_amount > 0:
                         # Create payment-like object for ledger entry
@@ -435,10 +446,12 @@ class PurchaseService:
                             date=purchase.invoice_date,
                             notes=purchase.notes or ""
                         )
-                        LedgerService.create_payment_ledger_entry(payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
-                    
+                        LedgerService.create_payment_ledger_entry(
+                            payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
+
                     # Update supplier balance
-                    LedgerService.update_party_balance(purchase.supplier, company)
+                    LedgerService.update_party_balance(
+                        purchase.supplier, company)
 
                 return purchase
 

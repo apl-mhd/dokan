@@ -63,11 +63,6 @@ class PurchaseCreateInputSerializer(serializers.Serializer):
         max_digits=10, decimal_places=2, required=False, default=0.00)
     paid_amount = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=False, default=0.00)
-    payment_status = serializers.ChoiceField(
-        choices=PaymentStatus.choices,
-        default=PaymentStatus.UNPAID,
-        required=False
-    )
     notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
     invoice_date = serializers.DateField(
@@ -97,10 +92,6 @@ class PurchaseUpdateInputSerializer(serializers.Serializer):
         max_digits=10, decimal_places=2, required=False)
     paid_amount = serializers.DecimalField(
         max_digits=10, decimal_places=2, required=False)
-    payment_status = serializers.ChoiceField(
-        choices=PaymentStatus.choices,
-        required=False
-    )
     notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
 
