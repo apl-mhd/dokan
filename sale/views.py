@@ -166,16 +166,38 @@ class SaleAPIView(APIView):
                 "error": "Sale ID is required"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if sale exists and is not delivered
+        # Check if sale exists
         sale = get_object_or_404(
             Sale.objects.filter(company=request.company),
             pk=pk
         )
 
-        if sale.status == 'delivered':
+        # Get new status from request data
+        new_status = request.data.get('status', sale.status)
+        old_status = sale.status
+
+        # Validate status transitions:
+        # - pending → delivered or cancelled: allowed
+        # - delivered → cancelled: allowed
+        # - cancelled → cannot be changed (locked)
+        # - delivered → pending: NOT allowed
+
+        # Prevent invalid status transitions
+        if old_status == 'delivered' and new_status == 'pending':
             return Response({
-                "error": "Cannot edit a delivered sale"
+                "error": "Cannot change status from delivered to pending"
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Block all status changes from cancelled invoices
+        if old_status == 'cancelled':
+            return Response({
+                "error": "Cannot change status of a cancelled invoice"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Allow status changes from delivered to cancelled
+        # The service layer will handle inventory/ledger reversals appropriately
+        # Note: Full edits (changing items/amounts) on delivered/cancelled sales
+        # are handled by the service layer which will properly reverse/apply inventory
 
         data = request.data
         data['id'] = pk  # Add id to data for serializer validation

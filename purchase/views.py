@@ -167,16 +167,36 @@ class PurchaseAPIView(APIView):
                 "error": "Purchase ID is required"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if purchase exists and is not completed
+        # Check if purchase exists
         purchase = get_object_or_404(
             Purchase.objects.filter(company=request.company),
             pk=pk
         )
 
-        if purchase.status == 'completed':
+        # Get new status from request data
+        new_status = request.data.get('status', purchase.status)
+        old_status = purchase.status
+
+        # Validate status transitions:
+        # - pending → completed or cancelled: allowed
+        # - completed → cancelled: allowed
+        # - cancelled → cannot be changed (locked)
+        # - completed → pending: NOT allowed
+
+        # Prevent invalid status transitions
+        if old_status == 'completed' and new_status == 'pending':
             return Response({
-                "error": "Cannot edit a completed purchase"
+                "error": "Cannot change status from completed to pending"
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Block all status changes from cancelled invoices
+        if old_status == 'cancelled':
+            return Response({
+                "error": "Cannot change status of a cancelled purchase"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Allow status changes from completed to cancelled
+        # The service layer will handle inventory/ledger reversals appropriately
 
         data = request.data
         data['id'] = pk  # Add id to data for serializer validation

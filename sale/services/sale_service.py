@@ -124,10 +124,10 @@ class SaleService:
         return stock_transaction
 
     @staticmethod
-    def _revert_old_items_stock(sale, old_items, warehouse, company):
+    def _revert_old_items_stock(sale, old_items, warehouse, company, should_revert_stock=True):
         """
         Revert stock for old sale items (add quantities back).
-        Used when updating a sale.
+        Used when updating a sale or cancelling a delivered sale.
         IMPORTANT: Converts to base unit before adding.
 
         Args:
@@ -135,9 +135,10 @@ class SaleService:
             old_items: QuerySet of old SaleItem instances
             warehouse: Warehouse instance
             company: Company instance
+            should_revert_stock: Boolean indicating if stock should be reverted (only if old status was delivered)
         """
         for old_item in old_items:
-            if old_item.quantity > 0:
+            if old_item.quantity > 0 and should_revert_stock:
                 stock, base_qty = SaleService._update_stock(
                     old_item.product, warehouse, company, old_item.quantity, old_item.unit, operation='add'
                 )
@@ -155,9 +156,40 @@ class SaleService:
                 )
 
     @staticmethod
-    def _process_sale_items(sale, items, warehouse, company, is_update=False):
+    def _apply_ledger_entries(sale, company):
         """
-        Process sale items and update stock accordingly.
+        Apply ledger entries for a delivered sale.
+        This method should only be called when sale status is 'delivered'.
+        Note: Inventory is handled separately in _process_sale_items.
+
+        Args:
+            sale: Sale instance
+            company: Company instance
+        """
+        # Create ledger entries
+        if sale.grand_total > 0:
+            # Create sale ledger entry (Debit: Customer Receivable)
+            LedgerService.create_sale_ledger_entry(sale, company)
+
+            # Create payment ledger entry if paid_amount > 0 (Credit: Customer Receivable)
+            if sale.paid_amount > 0:
+                from types import SimpleNamespace
+                payment_obj = SimpleNamespace(
+                    reference_number=sale.invoice_number or f"SAL-{sale.id}",
+                    amount=sale.paid_amount,
+                    date=sale.invoice_date,
+                    notes=sale.notes or ""
+                )
+                LedgerService.create_payment_ledger_entry(
+                    payment_obj, company, sale.customer, payment_type='received', source_object=sale)
+
+            # Update customer balance
+            LedgerService.update_party_balance(sale.customer, company)
+
+    @staticmethod
+    def _process_sale_items(sale, items, warehouse, company, is_update=False, should_update_stock=True):
+        """
+        Process sale items and optionally update stock accordingly.
         IMPORTANT: Converts all quantities to base unit before deducting from stock.
 
         Example: If user sells 50kg * 2 (quantity=50, unit=kg, with conversion_factor=1.0)
@@ -169,6 +201,7 @@ class SaleService:
             warehouse: Warehouse instance
             company: Company instance
             is_update: Boolean indicating if this is an update operation
+            should_update_stock: Boolean indicating if stock should be updated (only for delivered status)
 
         Returns:
             tuple: (sale_items list, sub_total Decimal)
@@ -195,7 +228,8 @@ class SaleService:
             ))
 
             # Update stock for new items (deduct from stock) - CONVERTED TO BASE UNIT
-            if quantity > 0:
+            # Only update stock if should_update_stock is True (i.e., status is delivered)
+            if quantity > 0 and should_update_stock:
                 stock, base_unit_quantity = SaleService._update_stock(
                     product, warehouse, company, quantity, unit, operation='subtract'
                 )
@@ -260,7 +294,8 @@ class SaleService:
 
         try:
             with transaction.atomic():
-                # Get old items before deleting for stock adjustment
+                # Store old status to detect transitions
+                old_status = sale.status
                 old_items = list(sale.items.all())
                 warehouse = sale.warehouse
 
@@ -268,31 +303,46 @@ class SaleService:
                 SaleService._validate_company_access(
                     company, warehouse=warehouse)
 
-                # Delete old ledger entries before updating
-                LedgerService.delete_ledger_entries_for_object(sale, company)
+                # Get new status
+                new_status = validated_data.get('status', old_status)
 
-                # Revert stock for old items first (add back to stock)
-                SaleService._revert_old_items_stock(
-                    sale, old_items, warehouse, company)
+                # Handle status transitions:
+                # - If old status was delivered, we need to reverse inventory/ledger
+                # - If new status is delivered, we need to apply inventory/ledger
+                # - If old status was delivered and new status is cancelled, reverse everything
+                # - If old status was delivered and new status is pending, reverse everything
+                should_revert_old = (old_status == SaleStatus.DELIVERED)
+                should_apply_new = (new_status == SaleStatus.DELIVERED)
+
+                # Delete old ledger entries if old status was delivered
+                if should_revert_old:
+                    LedgerService.delete_ledger_entries_for_object(
+                        sale, company)
+
+                # Revert stock for old items only if old status was delivered
+                if should_revert_old:
+                    SaleService._revert_old_items_stock(
+                        sale, old_items, warehouse, company, should_revert_stock=True)
 
                 # Delete existing items
                 sale.items.all().delete()
 
                 # Update sale fields if provided
                 if 'status' in validated_data:
-                    sale.status = validated_data['status']
+                    sale.status = new_status
                 if 'notes' in validated_data:
                     sale.notes = validated_data['notes']
                 sale.updated_by = user
                 sale.save()
 
-                # Process new items and update stock
+                # Process new items - only update stock if new status is delivered
                 sale_items, sub_total = SaleService._process_sale_items(
                     sale=sale,
                     items=items,
                     warehouse=warehouse,
                     company=company,
-                    is_update=True
+                    is_update=True,
+                    should_update_stock=should_apply_new
                 )
 
                 SaleItem.objects.bulk_create(sale_items)
@@ -317,25 +367,14 @@ class SaleService:
                 sale.save(update_fields=["sub_total", "tax", "discount",
                           "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
-                # Recreate accounting ledger entries
-                if sale.grand_total > 0:
-                    # Recreate sale ledger entry (Debit: Customer Receivable)
-                    LedgerService.create_sale_ledger_entry(sale, company)
-
-                    # Create payment ledger entry if paid_amount > 0 (Credit: Customer Receivable)
-                    if paid_amount > 0:
-                        # Create payment-like object for ledger entry
-                        from types import SimpleNamespace
-                        payment_obj = SimpleNamespace(
-                            reference_number=sale.invoice_number or f"SAL-{sale.id}",
-                            amount=paid_amount,
-                            date=sale.invoice_date,
-                            notes=sale.notes or ""
-                        )
-                        LedgerService.create_payment_ledger_entry(
-                            payment_obj, company, sale.customer, payment_type='received', source_object=sale)
-
-                    # Update customer balance
+                # Apply ledger entries only if new status is delivered
+                if should_apply_new:
+                    SaleService._apply_ledger_entries(sale, company)
+                elif new_status in [SaleStatus.PENDING, SaleStatus.CANCELLED]:
+                    # If status is pending or cancelled, ensure no ledger entries exist
+                    # and update customer balance
+                    LedgerService.delete_ledger_entries_for_object(
+                        sale, company)
                     LedgerService.update_party_balance(sale.customer, company)
 
                 return sale
@@ -380,9 +419,10 @@ class SaleService:
                     doc_type=DocumentType.SALES_ORDER
                 )
 
+                sale_status = validated_data.get("status", SaleStatus.PENDING)
                 sale = Sale.objects.create(
                     invoice_number=invoice_number,
-                    status=validated_data.get("status", SaleStatus.PENDING),
+                    status=sale_status,
                     created_by=user,
                     warehouse=warehouse,
                     customer=customer,
@@ -391,13 +431,15 @@ class SaleService:
                     invoice_date=validated_data.get("invoice_date"),
                 )
 
-                # Process items and update stock
+                # Process items - only update stock if status is delivered
+                should_update_stock = (sale_status == SaleStatus.DELIVERED)
                 sale_items, sub_total = SaleService._process_sale_items(
                     sale=sale,
                     items=items,
                     warehouse=warehouse,
                     company=company,
-                    is_update=False
+                    is_update=False,
+                    should_update_stock=should_update_stock
                 )
 
                 SaleItem.objects.bulk_create(sale_items)
@@ -422,26 +464,9 @@ class SaleService:
                 sale.save(update_fields=["sub_total", "tax", "discount",
                           "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
-                # Create accounting ledger entries
-                if sale.grand_total > 0:
-                    # Create sale ledger entry (Debit: Customer Receivable)
-                    LedgerService.create_sale_ledger_entry(sale, company)
-
-                    # Create payment ledger entry if paid_amount > 0 (Credit: Customer Receivable)
-                    if paid_amount > 0:
-                        # Create payment-like object for ledger entry
-                        from types import SimpleNamespace
-                        payment_obj = SimpleNamespace(
-                            reference_number=sale.invoice_number or f"SAL-{sale.id}",
-                            amount=paid_amount,
-                            date=sale.invoice_date,
-                            notes=sale.notes or ""
-                        )
-                        LedgerService.create_payment_ledger_entry(
-                            payment_obj, company, sale.customer, payment_type='received', source_object=sale)
-
-                    # Update customer balance
-                    LedgerService.update_party_balance(sale.customer, company)
+                # Create accounting ledger entries only if status is delivered
+                if sale_status == SaleStatus.DELIVERED:
+                    SaleService._apply_ledger_entries(sale, company)
 
                 return sale
 
