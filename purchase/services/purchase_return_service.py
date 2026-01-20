@@ -38,31 +38,35 @@ class PurchaseReturnService:
         if 'purchase' in kwargs:
             purchase = kwargs['purchase']
             if purchase.company != company:
-                raise ValidationError("Purchase does not belong to your company.")
+                raise ValidationError(
+                    "Purchase does not belong to your company.")
 
         if 'supplier' in kwargs:
             supplier = kwargs['supplier']
             if supplier.company != company:
-                raise ValidationError("Supplier does not belong to your company.")
+                raise ValidationError(
+                    "Supplier does not belong to your company.")
 
         if 'warehouse' in kwargs:
             warehouse = kwargs['warehouse']
             if warehouse.company != company:
-                raise ValidationError("Warehouse does not belong to your company.")
+                raise ValidationError(
+                    "Warehouse does not belong to your company.")
 
         if 'purchase_return' in kwargs:
             purchase_return = kwargs['purchase_return']
             if purchase_return.company != company:
-                raise ValidationError("Purchase return does not belong to your company.")
+                raise ValidationError(
+                    "Purchase return does not belong to your company.")
 
     @staticmethod
     def _validate_purchase_for_return(purchase):
         """
         Validate that a purchase can have items returned.
-        
+
         Args:
             purchase: Purchase instance
-            
+
         Raises:
             ValidationError: If purchase cannot have returns
         """
@@ -78,21 +82,21 @@ class PurchaseReturnService:
     def _validate_return_quantity(purchase_item, requested_quantity):
         """
         Validate that return quantity doesn't exceed available quantity.
-        
+
         Args:
             purchase_item: PurchaseItem instance
             requested_quantity: Decimal quantity to return
-            
+
         Returns:
             Decimal: Total already returned quantity
-            
+
         Raises:
             ValidationError: If return quantity exceeds available
         """
         # For purchase returns, we check against the original purchase item
         # We don't track per-item returns in this simplified version
         available_to_return = purchase_item.quantity
-        
+
         if requested_quantity > available_to_return:
             raise ValidationError(
                 f"Cannot return {requested_quantity} units of {purchase_item.product.name}. "
@@ -103,7 +107,7 @@ class PurchaseReturnService:
     def _update_stock(product, warehouse, quantity, unit, company, direction=StockDirection.OUT):
         """
         Update stock levels for returned product.
-        
+
         Args:
             product: Product instance
             warehouse: Warehouse instance
@@ -112,6 +116,9 @@ class PurchaseReturnService:
             company: Company instance
             direction: StockDirection (OUT for returns, IN for cancellations)
         """
+        # Convert quantity to base unit (Stock.quantity is stored in base units)
+        base_unit_quantity = unit.convert_to_base_unit(quantity)
+
         # Get or create stock record
         stock, created = Stock.objects.get_or_create(
             company=company,
@@ -122,44 +129,67 @@ class PurchaseReturnService:
 
         # Update quantity (subtract for returns)
         if direction == StockDirection.OUT:
-            stock.quantity -= quantity
+            stock.quantity -= base_unit_quantity
+            # Keep consistent with PurchaseService behavior: don't allow negative stock
+            if stock.quantity < 0:
+                stock.quantity = Decimal('0.00')
         else:
-            stock.quantity += quantity
+            stock.quantity += base_unit_quantity
 
-        stock.save()
+        stock.save(update_fields=["quantity"])
 
-        return stock
+        return stock, base_unit_quantity
 
     @staticmethod
     def _create_stock_transaction(
-        stock, product, quantity, unit, purchase_return,
-        purchase_return_item, company, user, direction=StockDirection.OUT
+        product,
+        stock,
+        unit,
+        company,
+        original_quantity,
+        base_unit_quantity,
+        direction,
+        transaction_type,
+        reference_id,
+        note=None,
+        source_object=None
     ):
         """
         Create stock transaction record for audit trail.
-        
+
         Args:
-            stock: Stock instance
             product: Product instance
-            quantity: Decimal quantity
+            stock: Stock instance
             unit: Unit instance
-            purchase_return: PurchaseReturn instance
-            purchase_return_item: PurchaseReturnItem instance
             company: Company instance
-            user: User instance (unused; kept for signature compatibility)
-            direction: StockDirection (OUT for returns, IN for cancellations)
+            original_quantity: Decimal quantity in original unit
+            base_unit_quantity: Decimal quantity in base unit (stored in Stock)
+            direction: StockDirection.IN or StockDirection.OUT
+            transaction_type: TransactionType enum value
+            reference_id: related object id
+            note: Optional note string
         """
+        from django.contrib.contenttypes.models import ContentType
+
+        content_type = None
+        object_id = None
+        if source_object is not None:
+            content_type = ContentType.objects.get_for_model(source_object.__class__)
+            object_id = source_object.id
+
         StockTransaction.objects.create(
             company=company,
             product=product,
             stock=stock,
             unit=unit,
-            quantity=quantity,
-            transaction_type=TransactionType.PURCHASE_RETURN,
+            quantity=base_unit_quantity,  # store base unit quantity for consistency
+            transaction_type=transaction_type,
             direction=direction,
-            reference_id=purchase_return.id,
+            reference_id=reference_id,
+            content_type=content_type,
+            object_id=object_id,
             balance_after=stock.quantity,
-            note=f"Purchase Return: {purchase_return_item.product.name} ({quantity} {unit.name})"
+            note=note or f"Original: {original_quantity} {unit.name} = {base_unit_quantity} base units"
         )
 
     @staticmethod
@@ -179,10 +209,10 @@ class PurchaseReturnService:
     def _calculate_return_totals(items_data):
         """
         Calculate return totals from items data.
-        
+
         Args:
             items_data: List of dicts with quantity and unit_price
-            
+
         Returns:
             dict: Contains sub_total, tax, discount, grand_total
         """
@@ -194,12 +224,12 @@ class PurchaseReturnService:
             for item in items_data
         )
         sub_total = PurchaseReturnService._money(sub_total)
-        
+
         # For now, use same tax/discount as original purchase or default to 0
         tax = PurchaseReturnService._money(Decimal('0.00'))
         discount = PurchaseReturnService._money(Decimal('0.00'))
         grand_total = PurchaseReturnService._money(sub_total + tax - discount)
-        
+
         return {
             'sub_total': sub_total,
             'tax': tax,
@@ -212,12 +242,12 @@ class PurchaseReturnService:
     def create_purchase_return(data, company, user):
         """
         Create a new purchase return with items.
-        
+
         Args:
             data: Dict containing return data and items
             company: Company instance
             user: User instance creating the return
-            
+
         Returns:
             PurchaseReturn: Created purchase return instance
         """
@@ -289,7 +319,8 @@ class PurchaseReturnService:
                 item_data=item_data,
                 company=company,
                 user=user,
-                should_update_stock=(return_status == PurchaseReturnStatus.COMPLETED)
+                should_update_stock=(
+                    return_status == PurchaseReturnStatus.COMPLETED)
             )
 
         # Create ledger entries if completed
@@ -304,7 +335,7 @@ class PurchaseReturnService:
     def _process_return_item(purchase_return, item_data, company, user, should_update_stock=True):
         """
         Process a single return item.
-        
+
         Args:
             purchase_return: PurchaseReturn instance
             item_data: Dict containing item details
@@ -323,7 +354,8 @@ class PurchaseReturnService:
 
         quantity = Decimal(str(item_data['quantity']))
         unit_price = Decimal(str(item_data['unit_price']))
-        line_total = PurchaseReturnService._calculate_line_total(quantity, unit_price)
+        line_total = PurchaseReturnService._calculate_line_total(
+            quantity, unit_price)
 
         # Create return item
         return_item = PurchaseReturnItem.objects.create(
@@ -340,7 +372,7 @@ class PurchaseReturnService:
         # Update stock and create transaction if completed
         if should_update_stock:
             # Subtract from stock (we're returning/removing items)
-            stock = PurchaseReturnService._update_stock(
+            stock, base_qty = PurchaseReturnService._update_stock(
                 product=product,
                 warehouse=purchase_return.warehouse,
                 quantity=quantity,
@@ -351,15 +383,20 @@ class PurchaseReturnService:
 
             # Create stock transaction
             PurchaseReturnService._create_stock_transaction(
-                stock=stock,
                 product=product,
-                quantity=quantity,
+                stock=stock,
                 unit=unit,
-                purchase_return=purchase_return,
-                purchase_return_item=return_item,
                 company=company,
-                user=user,
-                direction=StockDirection.OUT
+                original_quantity=quantity,
+                base_unit_quantity=base_qty,
+                direction=StockDirection.OUT,
+                transaction_type=TransactionType.PURCHASE_RETURN,
+                reference_id=purchase_return.id,
+                source_object=purchase_return,
+                note=(
+                    f"Purchase Return {purchase_return.return_number or f'PRET-{purchase_return.id}'} - "
+                    f"{quantity} {unit.name} = {base_qty} base units"
+                )
             )
 
         return return_item
@@ -368,7 +405,7 @@ class PurchaseReturnService:
     def _apply_ledger_entries(purchase_return, company):
         """
         Create ledger entries for completed purchase return.
-        
+
         Args:
             purchase_return: PurchaseReturn instance
             company: Company instance
@@ -387,12 +424,12 @@ class PurchaseReturnService:
     def complete_purchase_return(purchase_return_id, company, user):
         """
         Complete a pending purchase return.
-        
+
         Args:
             purchase_return_id: ID of purchase return
             company: Company instance
             user: User instance
-            
+
         Returns:
             PurchaseReturn: Updated purchase return instance
         """
@@ -423,7 +460,7 @@ class PurchaseReturnService:
         # Update stock for all items
         for return_item in purchase_return.items.all():
             # Subtract from stock
-            stock = PurchaseReturnService._update_stock(
+            stock, base_qty = PurchaseReturnService._update_stock(
                 product=return_item.product,
                 warehouse=purchase_return.warehouse,
                 quantity=return_item.quantity,
@@ -434,15 +471,20 @@ class PurchaseReturnService:
 
             # Create stock transaction
             PurchaseReturnService._create_stock_transaction(
-                stock=stock,
                 product=return_item.product,
-                quantity=return_item.quantity,
+                stock=stock,
                 unit=return_item.unit,
-                purchase_return=purchase_return,
-                purchase_return_item=return_item,
                 company=company,
-                user=user,
-                direction=StockDirection.OUT
+                original_quantity=return_item.quantity,
+                base_unit_quantity=base_qty,
+                direction=StockDirection.OUT,
+                transaction_type=TransactionType.PURCHASE_RETURN,
+                reference_id=purchase_return.id,
+                source_object=purchase_return,
+                note=(
+                    f"Purchase Return complete {purchase_return.return_number or f'PRET-{purchase_return.id}'} - "
+                    f"{return_item.quantity} {return_item.unit.name} = {base_qty} base units"
+                )
             )
 
         # Create ledger entries
@@ -455,12 +497,12 @@ class PurchaseReturnService:
     def cancel_purchase_return(purchase_return_id, company, user):
         """
         Cancel a purchase return.
-        
+
         Args:
             purchase_return_id: ID of purchase return
             company: Company instance
             user: User instance
-            
+
         Returns:
             PurchaseReturn: Cancelled purchase return instance
         """
@@ -483,7 +525,7 @@ class PurchaseReturnService:
         if purchase_return.status == PurchaseReturnStatus.COMPLETED:
             # Reverse stock changes (add back)
             for return_item in purchase_return.items.all():
-                stock = PurchaseReturnService._update_stock(
+                stock, base_qty = PurchaseReturnService._update_stock(
                     product=return_item.product,
                     warehouse=purchase_return.warehouse,
                     quantity=return_item.quantity,
@@ -494,21 +536,28 @@ class PurchaseReturnService:
 
                 # Create reversal transaction
                 PurchaseReturnService._create_stock_transaction(
-                    stock=stock,
                     product=return_item.product,
-                    quantity=return_item.quantity,
+                    stock=stock,
                     unit=return_item.unit,
-                    purchase_return=purchase_return,
-                    purchase_return_item=return_item,
                     company=company,
-                    user=user,
-                    direction=StockDirection.IN  # Add back
+                    original_quantity=return_item.quantity,
+                    base_unit_quantity=base_qty,
+                    direction=StockDirection.IN,  # Add back
+                    transaction_type=TransactionType.PURCHASE_RETURN,
+                    reference_id=purchase_return.id,
+                    source_object=purchase_return,
+                    note=(
+                        f"Purchase Return cancel {purchase_return.return_number or f'PRET-{purchase_return.id}'} - "
+                        f"reverted {return_item.quantity} {return_item.unit.name} = {base_qty} base units"
+                    )
                 )
 
             # Delete ledger entries
-            LedgerService.delete_ledger_entries_for_object(purchase_return, company)
+            LedgerService.delete_ledger_entries_for_object(
+                purchase_return, company)
             # Update supplier balance
-            LedgerService.update_party_balance(purchase_return.supplier, company)
+            LedgerService.update_party_balance(
+                purchase_return.supplier, company)
 
         # Update status
         purchase_return.status = PurchaseReturnStatus.CANCELLED
@@ -522,11 +571,11 @@ class PurchaseReturnService:
     def get_returnable_items(purchase_id, company):
         """
         Get list of items that can still be returned from a purchase.
-        
+
         Args:
             purchase_id: ID of the purchase
             company: Company instance
-            
+
         Returns:
             List of dictionaries with item info and returnable quantity
         """
@@ -534,15 +583,16 @@ class PurchaseReturnService:
             Purchase.objects.filter(company=company),
             id=purchase_id
         )
-        
+
         # Validate company access
-        PurchaseReturnService._validate_company_access(company, purchase=purchase)
-        
+        PurchaseReturnService._validate_company_access(
+            company, purchase=purchase)
+
         # Validate purchase can be returned
         PurchaseReturnService._validate_purchase_for_return(purchase)
-        
+
         returnable_items = []
-        
+
         for purchase_item in purchase.items.all():
             # Calculate already returned quantity for this product from this purchase
             # Since PurchaseReturnItem doesn't have purchase_item FK, we filter by product and purchase_return's purchase
@@ -552,13 +602,13 @@ class PurchaseReturnService:
                 purchase_return__purchase=purchase,
                 purchase_return__status__in=['pending', 'completed']
             )
-            
+
             total_returned = sum(
                 item.quantity for item in existing_returns
             ) if existing_returns.exists() else Decimal('0.00')
-            
+
             available_to_return = purchase_item.quantity - total_returned
-            
+
             if available_to_return > 0:
                 returnable_items.append({
                     'purchase_item_id': purchase_item.id,
@@ -572,5 +622,5 @@ class PurchaseReturnService:
                     'unit_price': float(purchase_item.unit_price),
                     'line_total': float(purchase_item.line_total),
                 })
-        
+
         return returnable_items

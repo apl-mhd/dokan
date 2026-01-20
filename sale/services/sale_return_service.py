@@ -146,7 +146,7 @@ class SaleReturnService:
 
     @staticmethod
     def _create_stock_transaction(product, stock, unit, company, original_quantity, 
-                                  base_unit_quantity, direction, reference_id, note=None):
+                                  base_unit_quantity, direction, reference_id, note=None, source_object=None):
         """
         Create a stock transaction record for sale return.
         
@@ -164,6 +164,14 @@ class SaleReturnService:
         Returns:
             StockTransaction instance
         """
+        from django.contrib.contenttypes.models import ContentType
+
+        content_type = None
+        object_id = None
+        if source_object is not None:
+            content_type = ContentType.objects.get_for_model(source_object.__class__)
+            object_id = source_object.id
+
         stock_transaction = StockTransaction.objects.create(
             product=product,
             quantity=base_unit_quantity,
@@ -173,6 +181,8 @@ class SaleReturnService:
             direction=direction,
             transaction_type=TransactionType.SALE_RETURN,
             reference_id=reference_id,
+            content_type=content_type,
+            object_id=object_id,
             balance_after=stock.quantity,
             note=note or f"Return: {original_quantity} {unit.name} = {base_unit_quantity} base units",
         )
@@ -271,6 +281,7 @@ class SaleReturnService:
                     base_unit_quantity=base_qty,
                     direction=StockDirection.IN,
                     reference_id=sale_return.id,
+                    source_object=sale_return,
                     note=f"Sale return {sale_return.return_number} - {return_item.returned_quantity} {return_item.unit.name} ({base_qty} base units) - Condition: {return_item.condition}"
                 )
 

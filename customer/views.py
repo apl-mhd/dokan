@@ -4,6 +4,7 @@ from rest_framework import status
 from .models import Customer
 from .serializer import CustomerSerializer
 from accounting.services.ledger_service import LedgerService
+from django.db.models import Q
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
@@ -41,8 +42,50 @@ class CustomerViewSet(viewsets.ModelViewSet):
             LedgerService.update_party_balance(customer, company)
 
     def list(self, request, *args, **kwargs):
-        """Custom list response format"""
+        """Custom list response format with search, filters, pagination"""
         queryset = self.filter_queryset(self.get_queryset())
+
+        # Search (name/email/phone)
+        search_query = request.query_params.get('search', '').strip()
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(email__icontains=search_query) |
+                Q(phone__icontains=search_query)
+            )
+
+        # Status filter
+        is_active = request.query_params.get('is_active', '').strip()
+        if is_active != '':
+            if is_active.lower() in ['true', '1', 'yes']:
+                queryset = queryset.filter(is_active=True)
+            elif is_active.lower() in ['false', '0', 'no']:
+                queryset = queryset.filter(is_active=False)
+
+        # Pagination
+        page = request.query_params.get('page', None)
+        page_size = request.query_params.get('page_size', None)
+
+        if page and page_size:
+            try:
+                page = int(page)
+                page_size = int(page_size)
+                start = (page - 1) * page_size
+                end = start + page_size
+                total_count = queryset.count()
+                page_qs = queryset[start:end]
+                serializer = self.get_serializer(page_qs, many=True)
+                return Response({
+                    "message": "Customers retrieved successfully",
+                    "data": serializer.data,
+                    "count": total_count,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": (total_count + page_size - 1) // page_size if total_count > 0 else 0
+                }, status=status.HTTP_200_OK)
+            except (ValueError, TypeError):
+                pass
+
         serializer = self.get_serializer(queryset, many=True)
         return Response({
             "message": "Customers retrieved successfully",

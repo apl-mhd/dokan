@@ -1,5 +1,7 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.contrib.contenttypes.models import ContentType
+from django.contrib.contenttypes.fields import GenericForeignKey
 from product.models import Product
 from warehouse.models import Warehouse
 from company.models import Company
@@ -69,6 +71,12 @@ class StockTransaction(models.Model):
     transaction_type = models.CharField(
         max_length=30, choices=TransactionType.choices)
     reference_id = models.PositiveIntegerField()
+    # Generic link to source document (Purchase, Sale, PurchaseReturn, SaleReturn, etc.)
+    content_type = models.ForeignKey(
+        ContentType, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+    content_object = GenericForeignKey('content_type', 'object_id')
     note = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -77,6 +85,7 @@ class StockTransaction(models.Model):
         indexes = [
             models.Index(fields=['company', 'transaction_type', 'created_at']),
             models.Index(fields=['company', 'product']),
+            models.Index(fields=['company', 'content_type', 'object_id']),
         ]
 
     def __str__(self):

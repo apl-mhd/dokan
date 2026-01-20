@@ -142,7 +142,7 @@ class LedgerService:
         Create a single ledger entry for a purchase return transaction.
 
         Single-Entry Accounting:
-        - Debit: Supplier Payable (reduces what we owe supplier) = grand_total
+        - Credit: Supplier Payable (reduces what we owe supplier) = grand_total
 
         This effectively reverses the original purchase entry, reducing our debt to supplier.
 
@@ -160,7 +160,7 @@ class LedgerService:
         if purchase_return.notes:
             description += f" - {purchase_return.notes[:100]}"
 
-        # Single entry: Supplier Payable (Debit - reduces our debt to supplier)
+        # Single entry: Supplier Payable (Credit - reduces our debt to supplier)
         ledger_entry = Ledger.objects.create(
             company=company,
             party=party,
@@ -170,8 +170,8 @@ class LedgerService:
             txn_id=purchase_return.return_number or f"PRET-{purchase_return.id}",
             txn_type=TransactionType.PURCHASE_RETURN,
             description=description,
-            debit=purchase_return.grand_total,
-            credit=Decimal('0.00')
+            debit=Decimal('0.00'),
+            credit=purchase_return.grand_total
         )
 
         return ledger_entry

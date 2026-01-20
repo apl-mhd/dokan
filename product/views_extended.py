@@ -2,6 +2,7 @@ from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from .models import Category, Unit, UnitCategory
+from django.db.models import Q
 from .serializers import (
     CategorySerializer,
     UnitSerializer,
@@ -107,6 +108,36 @@ class UnitCategoryViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
+
+        # Search by category name
+        search_query = request.query_params.get('search', '').strip()
+        if search_query:
+            queryset = queryset.filter(Q(name__icontains=search_query))
+
+        # Pagination
+        page = request.query_params.get('page', None)
+        page_size = request.query_params.get('page_size', None)
+
+        if page and page_size:
+            try:
+                page = int(page)
+                page_size = int(page_size)
+                start = (page - 1) * page_size
+                end = start + page_size
+                total_count = queryset.count()
+                page_qs = queryset[start:end]
+                serializer = self.get_serializer(page_qs, many=True)
+                return Response({
+                    "message": "Unit categories retrieved successfully",
+                    "data": serializer.data,
+                    "count": total_count,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": (total_count + page_size - 1) // page_size if total_count > 0 else 0
+                }, status=status.HTTP_200_OK)
+            except (ValueError, TypeError):
+                pass
+
         serializer = self.get_serializer(queryset, many=True)
         return Response({
             "message": "Unit categories retrieved successfully",
@@ -178,6 +209,55 @@ class UnitManagementViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
+
+        # Search by unit name or category name
+        search_query = request.query_params.get('search', '').strip()
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(unit_category__name__icontains=search_query)
+            )
+
+        # Filter by unit_category id
+        unit_category_id = request.query_params.get('unit_category', '').strip()
+        if unit_category_id:
+            try:
+                queryset = queryset.filter(unit_category_id=int(unit_category_id))
+            except (ValueError, TypeError):
+                pass
+
+        # Filter base/derived
+        is_base_unit = request.query_params.get('is_base_unit', '').strip()
+        if is_base_unit != '':
+            if is_base_unit.lower() in ['true', '1', 'yes']:
+                queryset = queryset.filter(is_base_unit=True)
+            elif is_base_unit.lower() in ['false', '0', 'no']:
+                queryset = queryset.filter(is_base_unit=False)
+
+        # Pagination
+        page = request.query_params.get('page', None)
+        page_size = request.query_params.get('page_size', None)
+
+        if page and page_size:
+            try:
+                page = int(page)
+                page_size = int(page_size)
+                start = (page - 1) * page_size
+                end = start + page_size
+                total_count = queryset.count()
+                page_qs = queryset[start:end]
+                serializer = self.get_serializer(page_qs, many=True)
+                return Response({
+                    "message": "Units retrieved successfully",
+                    "data": serializer.data,
+                    "count": total_count,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": (total_count + page_size - 1) // page_size if total_count > 0 else 0
+                }, status=status.HTTP_200_OK)
+            except (ValueError, TypeError):
+                pass
+
         serializer = self.get_serializer(queryset, many=True)
         return Response({
             "message": "Units retrieved successfully",

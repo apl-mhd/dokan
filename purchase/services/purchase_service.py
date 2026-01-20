@@ -83,7 +83,7 @@ class PurchaseService:
         return stock, base_unit_quantity
 
     @staticmethod
-    def _create_stock_transaction(product, stock, unit, company, original_quantity, base_unit_quantity, direction, transaction_type, reference_id, note=None):
+    def _create_stock_transaction(product, stock, unit, company, original_quantity, base_unit_quantity, direction, transaction_type, reference_id, note=None, source_object=None):
         """
         Create a stock transaction record.
         Records ORIGINAL quantity in transaction for audit trail.
@@ -103,6 +103,14 @@ class PurchaseService:
         Returns:
             StockTransaction instance
         """
+        from django.contrib.contenttypes.models import ContentType
+
+        content_type = None
+        object_id = None
+        if source_object is not None:
+            content_type = ContentType.objects.get_for_model(source_object.__class__)
+            object_id = source_object.id
+
         stock_transaction = StockTransaction.objects.create(
             product=product,
             quantity=base_unit_quantity,  # Store in base unit for consistency
@@ -112,6 +120,8 @@ class PurchaseService:
             direction=direction,
             transaction_type=transaction_type,
             reference_id=reference_id,
+            content_type=content_type,
+            object_id=object_id,
             balance_after=stock.quantity,
             note=note or f"Original: {original_quantity} {unit.name} = {base_unit_quantity} base units",
         )
@@ -146,6 +156,7 @@ class PurchaseService:
                     direction=StockDirection.OUT,
                     transaction_type=TransactionType.PURCHASE_RETURN,
                     reference_id=purchase.id,
+                    source_object=purchase,
                     note=f"Purchase update - reverted {old_item.quantity} {old_item.unit.name} ({base_qty} base units) from {purchase.invoice_number}",
                 )
 
@@ -214,6 +225,7 @@ class PurchaseService:
                     direction=StockDirection.IN,
                     transaction_type=TransactionType.PURCHASE,
                     reference_id=purchase.id,
+                    source_object=purchase,
                     note=transaction_note,
                 )
 

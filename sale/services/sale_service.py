@@ -89,7 +89,7 @@ class SaleService:
         return stock, base_unit_quantity
 
     @staticmethod
-    def _create_stock_transaction(product, stock, unit, company, original_quantity, base_unit_quantity, direction, transaction_type, reference_id, note=None):
+    def _create_stock_transaction(product, stock, unit, company, original_quantity, base_unit_quantity, direction, transaction_type, reference_id, note=None, source_object=None):
         """
         Create a stock transaction record.
         Records ORIGINAL quantity in transaction for audit trail.
@@ -109,6 +109,14 @@ class SaleService:
         Returns:
             StockTransaction instance
         """
+        from django.contrib.contenttypes.models import ContentType
+
+        content_type = None
+        object_id = None
+        if source_object is not None:
+            content_type = ContentType.objects.get_for_model(source_object.__class__)
+            object_id = source_object.id
+
         stock_transaction = StockTransaction.objects.create(
             product=product,
             quantity=base_unit_quantity,  # Store in base unit for consistency
@@ -118,6 +126,8 @@ class SaleService:
             direction=direction,
             transaction_type=transaction_type,
             reference_id=reference_id,
+            content_type=content_type,
+            object_id=object_id,
             balance_after=stock.quantity,
             note=note or f"Original: {original_quantity} {unit.name} = {base_unit_quantity} base units",
         )
@@ -152,6 +162,7 @@ class SaleService:
                     direction=StockDirection.IN,
                     transaction_type=TransactionType.SALE_RETURN,
                     reference_id=sale.id,
+                    source_object=sale,
                     note=f"Sale update - reverted {old_item.quantity} {old_item.unit.name} ({base_qty} base units) from {sale.invoice_number}",
                 )
 
@@ -248,6 +259,7 @@ class SaleService:
                     direction=StockDirection.OUT,
                     transaction_type=TransactionType.SALE,
                     reference_id=sale.id,
+                    source_object=sale,
                     note=transaction_note,
                 )
 
