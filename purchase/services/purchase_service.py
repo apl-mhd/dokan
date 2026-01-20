@@ -118,10 +118,10 @@ class PurchaseService:
         return stock_transaction
 
     @staticmethod
-    def _revert_old_items_stock(purchase, old_items, warehouse, company):
+    def _revert_old_items_stock(purchase, old_items, warehouse, company, should_revert_stock=True):
         """
         Revert stock for old purchase items (subtract quantities).
-        Used when updating a purchase.
+        Used when updating a purchase or cancelling a completed purchase.
         IMPORTANT: Converts to base unit before subtracting.
 
         Args:
@@ -129,9 +129,10 @@ class PurchaseService:
             old_items: QuerySet of old PurchaseItem instances
             warehouse: Warehouse instance
             company: Company instance
+            should_revert_stock: Boolean indicating if stock should be reverted (only if old status was completed)
         """
         for old_item in old_items:
-            if old_item.quantity > 0:
+            if old_item.quantity > 0 and should_revert_stock:
                 stock, base_qty = PurchaseService._update_stock(
                     old_item.product, warehouse, company, old_item.quantity, old_item.unit, operation='subtract'
                 )
@@ -149,9 +150,9 @@ class PurchaseService:
                 )
 
     @staticmethod
-    def _process_purchase_items(purchase, items, warehouse, company, is_update=False):
+    def _process_purchase_items(purchase, items, warehouse, company, is_update=False, should_update_stock=True):
         """
-        Process purchase items and update stock accordingly.
+        Process purchase items and optionally update stock accordingly.
         IMPORTANT: Converts all quantities to base unit before storing in stock.
 
         Example: If user purchases 50kg * 2 (quantity=50, unit=kg, with conversion_factor=1.0)
@@ -163,6 +164,7 @@ class PurchaseService:
             warehouse: Warehouse instance
             company: Company instance
             is_update: Boolean indicating if this is an update operation
+            should_update_stock: Boolean indicating if stock should be updated (only for completed status)
 
         Returns:
             tuple: (purchase_items list, sub_total Decimal)
@@ -191,8 +193,9 @@ class PurchaseService:
                 line_total=line_total,
             ))
 
-            # Update stock for new items - CONVERTED TO BASE UNIT
-            if quantity > 0:
+            # Update stock for new items (add to stock) - CONVERTED TO BASE UNIT
+            # Only update stock if should_update_stock is True (i.e., status is completed)
+            if quantity > 0 and should_update_stock:
                 stock, base_unit_quantity = PurchaseService._update_stock(
                     product, warehouse, company, quantity, unit, operation='add'
                 )
@@ -215,6 +218,36 @@ class PurchaseService:
                 )
 
         return purchase_items, sub_total
+
+    @staticmethod
+    def _apply_ledger_entries(purchase, company):
+        """
+        Apply ledger entries for a completed purchase.
+        This method should only be called when purchase status is 'completed'.
+
+        Args:
+            purchase: Purchase instance
+            company: Company instance
+        """
+        # Create ledger entries
+        if purchase.grand_total > 0:
+            # Create purchase ledger entry (Credit: Supplier Payable)
+            LedgerService.create_purchase_ledger_entry(purchase, company)
+
+            # Create payment ledger entry if paid_amount > 0 (Debit: Supplier Payable)
+            if purchase.paid_amount > 0:
+                from types import SimpleNamespace
+                payment_obj = SimpleNamespace(
+                    reference_number=purchase.invoice_number or f"PUR-{purchase.id}",
+                    amount=purchase.paid_amount,
+                    date=purchase.invoice_date,
+                    notes=purchase.notes or ""
+                )
+                LedgerService.create_payment_ledger_entry(
+                    payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
+
+            # Update supplier balance
+            LedgerService.update_party_balance(purchase.supplier, company)
 
     @staticmethod
     def _calculate_payment_status(paid_amount, grand_total):
@@ -257,7 +290,8 @@ class PurchaseService:
 
         try:
             with transaction.atomic():
-                # Get old items before deleting for stock adjustment
+                # Store old status to detect transitions
+                old_status = purchase.status
                 old_items = list(purchase.items.all())
                 warehouse = purchase.warehouse
 
@@ -265,32 +299,52 @@ class PurchaseService:
                 PurchaseService._validate_company_access(
                     company, warehouse=warehouse)
 
-                # Delete old ledger entries before updating
-                LedgerService.delete_ledger_entries_for_object(
-                    purchase, company)
+                # Get new status
+                new_status = validated_data.get('status', old_status)
 
-                # Revert stock for old items first
-                PurchaseService._revert_old_items_stock(
-                    purchase, old_items, warehouse, company)
+                # Handle status transitions:
+                # - If old status was completed, we need to reverse inventory/ledger
+                # - If new status is completed, we need to apply inventory/ledger
+                # - If old status was completed and new status is cancelled, reverse everything
+                # - If old status was completed and new status is pending, reverse everything
+                should_revert_old = (old_status == PurchaseStatus.COMPLETED)
+                should_apply_new = (new_status == PurchaseStatus.COMPLETED)
+
+                # Delete old ledger entries if old status was completed
+                if should_revert_old:
+                    LedgerService.delete_ledger_entries_for_object(
+                        purchase, company)
+
+                # Revert stock for old items only if old status was completed
+                if should_revert_old:
+                    PurchaseService._revert_old_items_stock(
+                        purchase, old_items, warehouse, company, should_revert_stock=True)
 
                 # Delete existing items
                 purchase.items.all().delete()
 
                 # Update purchase fields if provided
                 if 'status' in validated_data:
-                    purchase.status = validated_data['status']
+                    purchase.status = new_status
+                    # Set completed_at timestamp when status changes to completed
+                    if new_status == PurchaseStatus.COMPLETED and old_status != PurchaseStatus.COMPLETED:
+                        purchase.completed_at = timezone.now()
+                    # Set cancelled_at timestamp when status changes to cancelled
+                    elif new_status == PurchaseStatus.CANCELLED and old_status != PurchaseStatus.CANCELLED:
+                        purchase.cancelled_at = timezone.now()
                 if 'notes' in validated_data:
                     purchase.notes = validated_data['notes']
                 purchase.updated_by = user
                 purchase.save()
 
-                # Process new items and update stock
+                # Process new items - only update stock if new status is completed
                 purchase_items, sub_total = PurchaseService._process_purchase_items(
                     purchase=purchase,
                     items=items,
                     warehouse=warehouse,
                     company=company,
-                    is_update=True
+                    is_update=True,
+                    should_update_stock=should_apply_new
                 )
 
                 PurchaseItem.objects.bulk_create(purchase_items)
@@ -316,28 +370,15 @@ class PurchaseService:
                 purchase.save(update_fields=[
                               "sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
-                # Recreate accounting ledger entries
-                if purchase.grand_total > 0:
-                    # Recreate purchase ledger entry (Debit: Supplier Payable)
-                    LedgerService.create_purchase_ledger_entry(
+                # Apply ledger entries only if new status is completed
+                if should_apply_new:
+                    PurchaseService._apply_ledger_entries(purchase, company)
+                elif new_status in [PurchaseStatus.PENDING, PurchaseStatus.CANCELLED]:
+                    # If status is pending or cancelled, ensure no ledger entries exist
+                    # and update supplier balance
+                    LedgerService.delete_ledger_entries_for_object(
                         purchase, company)
-
-                    # Create payment ledger entry if paid_amount > 0 (Credit: Supplier Payable)
-                    if paid_amount > 0:
-                        # Create payment-like object for ledger entry
-                        from types import SimpleNamespace
-                        payment_obj = SimpleNamespace(
-                            reference_number=purchase.invoice_number or f"PUR-{purchase.id}",
-                            amount=paid_amount,
-                            date=purchase.invoice_date,
-                            notes=purchase.notes or ""
-                        )
-                        LedgerService.create_payment_ledger_entry(
-                            payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
-
-                    # Update supplier balance
-                    LedgerService.update_party_balance(
-                        purchase.supplier, company)
+                    LedgerService.update_party_balance(purchase.supplier, company)
 
                 return purchase
 
@@ -386,10 +427,10 @@ class PurchaseService:
                     doc_type=DocumentType.PURCHASE_ORDER
                 )
 
+                purchase_status = validated_data.get("status", PurchaseStatus.PENDING)
                 purchase = Purchase.objects.create(
                     invoice_number=invoice_number,
-                    status=validated_data.get(
-                        "status", PurchaseStatus.PENDING),
+                    status=purchase_status,
                     created_by=user,
                     warehouse=warehouse,
                     supplier=supplier,
@@ -398,13 +439,15 @@ class PurchaseService:
                     invoice_date=invoice_date,
                 )
 
-                # Process items and update stock
+                # Process items - only update stock if status is completed
+                should_update_stock = (purchase_status == PurchaseStatus.COMPLETED)
                 purchase_items, sub_total = PurchaseService._process_purchase_items(
                     purchase=purchase,
                     items=items,
                     warehouse=warehouse,
                     company=company,
-                    is_update=False
+                    is_update=False,
+                    should_update_stock=should_update_stock
                 )
 
                 PurchaseItem.objects.bulk_create(purchase_items)
@@ -430,28 +473,9 @@ class PurchaseService:
                 purchase.save(update_fields=[
                               "sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
 
-                # Create accounting ledger entries
-                if purchase.grand_total > 0:
-                    # Create purchase ledger entry (Debit: Supplier Payable)
-                    LedgerService.create_purchase_ledger_entry(
-                        purchase, company)
-
-                    # Create payment ledger entry if paid_amount > 0 (Credit: Supplier Payable)
-                    if paid_amount > 0:
-                        # Create payment-like object for ledger entry
-                        from types import SimpleNamespace
-                        payment_obj = SimpleNamespace(
-                            reference_number=purchase.invoice_number or f"PUR-{purchase.id}",
-                            amount=paid_amount,
-                            date=purchase.invoice_date,
-                            notes=purchase.notes or ""
-                        )
-                        LedgerService.create_payment_ledger_entry(
-                            payment_obj, company, purchase.supplier, payment_type='made', source_object=purchase)
-
-                    # Update supplier balance
-                    LedgerService.update_party_balance(
-                        purchase.supplier, company)
+                # Create accounting ledger entries only if status is completed
+                if purchase_status == PurchaseStatus.COMPLETED:
+                    PurchaseService._apply_ledger_entries(purchase, company)
 
                 return purchase
 

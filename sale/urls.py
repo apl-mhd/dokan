@@ -8,4 +8,15 @@ urlpatterns = [
     
     # PDF Invoice generation
     path('<int:pk>/pdf/', views.SaleInvoicePDFView.as_view(), name='sale-invoice-pdf'),
+    
+    # Sale Returns CRUD endpoints
+    path('returns/', views.SaleReturnAPIView.as_view(), name='sale-return-list-create'),
+    path('returns/<int:pk>/', views.SaleReturnAPIView.as_view(), name='sale-return-detail'),
+    
+    # Sale Return Actions
+    path('returns/<int:pk>/complete/', views.SaleReturnCompleteAPIView.as_view(), name='sale-return-complete'),
+    path('returns/<int:pk>/cancel/', views.SaleReturnCancelAPIView.as_view(), name='sale-return-cancel'),
+    
+    # Get returnable items for a sale
+    path('<int:sale_id>/returnable-items/', views.SaleReturnableItemsAPIView.as_view(), name='sale-returnable-items'),
 ]

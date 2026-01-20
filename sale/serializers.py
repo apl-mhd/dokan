@@ -1,5 +1,8 @@
 from rest_framework import serializers
-from sale.models import Sale, SaleItem, SaleStatus, PaymentStatus
+from sale.models import (
+    Sale, SaleItem, SaleStatus, PaymentStatus,
+    SaleReturn, SaleReturnItem, SaleReturnStatus, RefundStatus
+)
 from customer.models import Customer
 
 
@@ -149,3 +152,133 @@ class SaleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Delivery charge cannot be negative.")
         return value
+
+
+# ================= SALE RETURN SERIALIZERS =================
+
+class SaleReturnItemOutputSerializer(serializers.ModelSerializer):
+    """Serializer for sale return items in output (read-only)"""
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+    sale_item_id = serializers.IntegerField(source='sale_item.id', read_only=True)
+    
+    class Meta:
+        model = SaleReturnItem
+        fields = [
+            'id', 'sale_item_id', 'product', 'product_name', 
+            'returned_quantity', 'unit', 'unit_name', 'unit_price', 
+            'line_total', 'condition', 'condition_notes', 'created_at'
+        ]
+        read_only_fields = ['line_total', 'created_at', 'product_name', 'unit_name']
+
+
+class SaleReturnItemInputSerializer(serializers.Serializer):
+    """Serializer for sale return item input (used in create/update operations)"""
+    sale_item_id = serializers.IntegerField(required=True)
+    returned_quantity = serializers.DecimalField(
+        max_digits=10, decimal_places=4, required=True)
+    condition = serializers.ChoiceField(
+        choices=['good', 'damaged', 'defective', 'expired', 'wrong_item'],
+        default='good',
+        required=False
+    )
+    condition_notes = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True)
+    
+    def validate_returned_quantity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Returned quantity must be greater than zero.")
+        return value
+
+
+class SaleReturnCreateInputSerializer(serializers.Serializer):
+    """Serializer for creating a sale return"""
+    sale_id = serializers.IntegerField(required=True)
+    return_date = serializers.DateField(required=False)
+    return_reason = serializers.CharField(required=True)
+    items = SaleReturnItemInputSerializer(many=True, required=True)
+    tax = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=0.00)
+    discount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=0.00)
+    refunded_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, default=0.00)
+    notes = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True)
+    
+    def validate_items(self, value):
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one item is required.")
+        return value
+    
+    def validate_tax(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Tax cannot be negative.")
+        return value
+    
+    def validate_discount(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Discount cannot be negative.")
+        return value
+    
+    def validate_refunded_amount(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Refunded amount cannot be negative.")
+        return value
+
+
+class SaleReturnUpdateInputSerializer(serializers.Serializer):
+    """Serializer for updating a sale return"""
+    id = serializers.IntegerField(required=True)
+    return_date = serializers.DateField(required=False)
+    return_reason = serializers.CharField(required=False)
+    items = SaleReturnItemInputSerializer(many=True, required=True)
+    tax = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    discount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    refunded_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    notes = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True)
+    
+    def validate_items(self, value):
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one item is required.")
+        return value
+    
+    def validate_tax(self, value):
+        if value and value < 0:
+            raise serializers.ValidationError("Tax cannot be negative.")
+        return value
+    
+    def validate_discount(self, value):
+        if value and value < 0:
+            raise serializers.ValidationError("Discount cannot be negative.")
+        return value
+    
+    def validate_refunded_amount(self, value):
+        if value and value < 0:
+            raise serializers.ValidationError("Refunded amount cannot be negative.")
+        return value
+
+
+class SaleReturnSerializer(serializers.ModelSerializer):
+    """Serializer for sale return output (read operations)"""
+    items = SaleReturnItemOutputSerializer(many=True, read_only=True)
+    customer_name = serializers.CharField(source='customer.name', read_only=True)
+    customer_phone = serializers.CharField(source='customer.phone', read_only=True)
+    warehouse_name = serializers.CharField(source='warehouse.name', read_only=True)
+    sale_invoice_number = serializers.CharField(source='sale.invoice_number', read_only=True)
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    
+    class Meta:
+        model = SaleReturn
+        fields = '__all__'
+        read_only_fields = [
+            'grand_total', 'sub_total', 'company', 'customer', 'warehouse',
+            'created_by', 'updated_by', 'created_at', 'updated_at',
+            'completed_at', 'cancelled_at', 'return_number', 'refund_status'
+        ]

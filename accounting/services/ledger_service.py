@@ -97,6 +97,46 @@ class LedgerService:
         return ledger_entry
 
     @staticmethod
+    def create_sale_return_ledger_entry(sale_return, company):
+        """
+        Create a single ledger entry for a sale return transaction.
+
+        Single-Entry Accounting:
+        - Credit: Customer Receivable (reduces what customer owes us) = grand_total
+
+        This effectively reverses the original sale entry, reducing the customer's debt.
+
+        Args:
+            sale_return: SaleReturn instance
+            company: Company instance
+
+        Returns:
+            Ledger instance
+        """
+        content_type = ContentType.objects.get_for_model(sale_return)
+        party = sale_return.customer  # Customer is a proxy of Party
+
+        description = f"Sales Return {sale_return.return_number} (Original: {sale_return.sale.invoice_number})"
+        if sale_return.notes:
+            description += f" - {sale_return.notes[:100]}"
+
+        # Single entry: Customer Receivable (Credit - reduces customer debt)
+        ledger_entry = Ledger.objects.create(
+            company=company,
+            party=party,
+            content_type=content_type,
+            object_id=sale_return.id,
+            date=sale_return.return_date,
+            txn_id=sale_return.return_number or f"RET-{sale_return.id}",
+            txn_type=TransactionType.SALE_RETURN,
+            description=description,
+            debit=Decimal('0.00'),
+            credit=sale_return.grand_total
+        )
+
+        return ledger_entry
+
+    @staticmethod
     def create_payment_ledger_entry(payment, company, party, payment_type='received', source_object=None):
         """
         Create a single ledger entry for a payment transaction.
@@ -113,7 +153,7 @@ class LedgerService:
         - Due amount is positive (we owe supplier money)
 
         Args:
-            payment: Payment instance (CustomerPayment or SupplierPayment) or SimpleNamespace with payment data
+            payment: Payment instance or SimpleNamespace with payment data
             company: Company instance
             party: Party instance (Customer or Supplier)
             payment_type: 'received' or 'made'

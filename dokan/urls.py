@@ -39,6 +39,7 @@ urlpatterns = [
     path('api/warehouses/', include('warehouse.urls')),
     path('api/inventory/', include('inventory.urls')),
     path('api/accounting/', include('accounting.urls')),
+    path('api/payments/', include('payment.urls')),
     
     # Dashboard
     path('api/dashboard/stats/', DashboardStatsAPIView.as_view(), name='dashboard-stats'),
