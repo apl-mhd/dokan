@@ -11,4 +11,15 @@ urlpatterns = [
     
     # PDF Invoice generation
     path('<int:pk>/pdf/', views.PurchaseInvoicePDFView.as_view(), name='purchase-invoice-pdf'),
+    
+    # Purchase Return endpoints
+    path('returns/', views.PurchaseReturnAPIView.as_view(), name='purchase-return-list-create'),
+    path('returns/<int:pk>/', views.PurchaseReturnAPIView.as_view(), name='purchase-return-detail'),
+    
+    # Purchase Return Actions
+    path('returns/<int:pk>/complete/', views.PurchaseReturnCompleteAPIView.as_view(), name='purchase-return-complete'),
+    path('returns/<int:pk>/cancel/', views.PurchaseReturnCancelAPIView.as_view(), name='purchase-return-cancel'),
+    
+    # Get returnable items for a purchase
+    path('<int:purchase_id>/returnable-items/', views.PurchaseReturnableItemsAPIView.as_view(), name='purchase-returnable-items'),
 ]

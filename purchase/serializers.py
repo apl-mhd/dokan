@@ -1,6 +1,9 @@
 from django.utils import timezone
 from rest_framework import serializers
-from .models import Purchase, PurchaseItem, PurchaseStatus, PaymentStatus
+from .models import (
+    Purchase, PurchaseItem, PurchaseStatus, PaymentStatus,
+    PurchaseReturn, PurchaseReturnItem, PurchaseReturnStatus
+)
 from supplier.models import Supplier
 
 
@@ -153,3 +156,111 @@ class PurchaseSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Delivery charge cannot be negative.")
         return value
+
+
+# ==================== Purchase Return Serializers ====================
+
+class PurchaseReturnItemSerializer(serializers.ModelSerializer):
+    """Serializer for purchase return items (output)"""
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    product_code = serializers.CharField(source='product.code', read_only=True)
+    unit_name = serializers.CharField(source='unit.name', read_only=True)
+
+    class Meta:
+        model = PurchaseReturnItem
+        fields = [
+            'id', 'product', 'product_name', 'product_code',
+            'quantity', 'unit', 'unit_name', 'unit_price',
+            'line_total', 'reason', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'line_total', 'created_at', 'updated_at']
+
+
+class PurchaseReturnItemInputSerializer(serializers.Serializer):
+    """Serializer for purchase return item input"""
+    product_id = serializers.IntegerField(required=True)
+    quantity = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=True)
+    unit_id = serializers.IntegerField(required=True)
+    unit_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=True)
+    reason = serializers.CharField(
+        required=False, allow_blank=True, default='')
+
+    def validate_quantity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                "Return quantity must be greater than zero.")
+        return value
+
+    def validate_unit_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Unit price cannot be negative.")
+        return value
+
+
+class PurchaseReturnInputSerializer(serializers.Serializer):
+    """Serializer for creating purchase return"""
+    purchase_id = serializers.IntegerField(required=True)
+    warehouse_id = serializers.IntegerField(required=False)
+    return_date = serializers.DateField(required=False)
+    items = PurchaseReturnItemInputSerializer(many=True, required=True)
+    reason = serializers.CharField(
+        required=False, allow_blank=True, default='')
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+    refund_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False)
+    status = serializers.ChoiceField(
+        choices=PurchaseReturnStatus.choices,
+        default=PurchaseReturnStatus.PENDING
+    )
+
+    def validate_items(self, value):
+        if not value or len(value) == 0:
+            raise serializers.ValidationError(
+                "At least one item is required for return.")
+        return value
+
+    def validate_refund_amount(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError(
+                "Refund amount cannot be negative.")
+        return value
+
+
+class PurchaseReturnSerializer(serializers.ModelSerializer):
+    """Serializer for purchase return output"""
+    items = PurchaseReturnItemSerializer(many=True, read_only=True)
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    warehouse_name = serializers.CharField(source='warehouse.name', read_only=True)
+    purchase_invoice_number = serializers.CharField(
+        source='purchase.invoice_number', read_only=True)
+    status_display = serializers.CharField(
+        source='get_status_display', read_only=True)
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True)
+
+    class Meta:
+        model = PurchaseReturn
+        fields = [
+            'id', 'purchase', 'purchase_invoice_number', 'company',
+            'supplier', 'supplier_name', 'warehouse', 'warehouse_name',
+            'return_number', 'return_date', 'sub_total', 'tax',
+            'discount', 'grand_total', 'refund_amount', 'status',
+            'status_display', 'completed_at', 'cancelled_at',
+            'reason', 'notes', 'items', 'created_by', 'created_by_username',
+            'updated_by', 'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'return_number', 'sub_total', 'tax', 'discount',
+            'grand_total', 'completed_at', 'cancelled_at', 'created_by',
+            'updated_by', 'created_at', 'updated_at'
+        ]
+
+
+class PurchaseReturnStatusUpdateSerializer(serializers.Serializer):
+    """Serializer for updating purchase return status"""
+    status = serializers.ChoiceField(
+        choices=PurchaseReturnStatus.choices,
+        required=True
+    )

@@ -315,6 +315,391 @@ class PurchaseInvoicePDFView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# ==================== Purchase Return Views ====================
+
+class PurchaseReturnAPIView(APIView):
+    """API view for purchase returns"""
+
+    def get(self, request, pk=None):
+        """Get single return or list all returns"""
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if pk:
+            # Get single purchase return with items
+            from purchase.serializers import PurchaseReturnSerializer
+            from purchase.models import PurchaseReturn
+
+            purchase_return = get_object_or_404(
+                PurchaseReturn.objects.filter(company=request.company)
+                .select_related('purchase', 'supplier', 'warehouse', 'created_by')
+                .prefetch_related('items__product', 'items__unit'),
+                pk=pk
+            )
+
+            serializer = PurchaseReturnSerializer(purchase_return)
+            return Response({
+                "message": "Purchase return retrieved successfully",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+
+        # List all purchase returns
+        from purchase.serializers import PurchaseReturnSerializer
+        from purchase.models import PurchaseReturn
+
+        returns = PurchaseReturn.objects.filter(company=request.company)\
+            .select_related('purchase', 'supplier', 'warehouse', 'created_by')\
+            .prefetch_related('items__product', 'items__unit')
+
+        # Apply filters
+        search_query = request.query_params.get('search', '').strip()
+        if search_query:
+            from django.db.models import Q
+            returns = returns.filter(
+                Q(return_number__icontains=search_query) |
+                Q(supplier__name__icontains=search_query) |
+                Q(purchase__invoice_number__icontains=search_query)
+            )
+
+        status_filter = request.query_params.get('status', '').strip()
+        if status_filter:
+            returns = returns.filter(status=status_filter)
+
+        supplier_id = request.query_params.get('supplier_id', '').strip()
+        if supplier_id:
+            returns = returns.filter(supplier_id=supplier_id)
+
+        start_date = request.query_params.get('start_date', '').strip()
+        end_date = request.query_params.get('end_date', '').strip()
+        if start_date:
+            returns = returns.filter(return_date__gte=start_date)
+        if end_date:
+            returns = returns.filter(return_date__lte=end_date)
+
+        # Pagination
+        page = request.query_params.get('page', None)
+        page_size = request.query_params.get('page_size', None)
+
+        if page and page_size:
+            try:
+                page = int(page)
+                page_size = int(page_size)
+                start = (page - 1) * page_size
+                end = start + page_size
+                total_count = returns.count()
+                returns = returns.order_by(
+                    '-return_date', '-created_at')[start:end]
+
+                serializer = PurchaseReturnSerializer(returns, many=True)
+                return Response({
+                    "message": "Purchase returns retrieved successfully",
+                    "data": serializer.data,
+                    "count": total_count,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": (total_count + page_size - 1) // page_size if total_count > 0 else 0
+                }, status=status.HTTP_200_OK)
+            except (ValueError, TypeError):
+                pass
+
+        # Return all if no pagination
+        returns = returns.order_by('-return_date', '-created_at')
+        serializer = PurchaseReturnSerializer(returns, many=True)
+        return Response({
+            "message": "Purchase returns retrieved successfully",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """Create new purchase return"""
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user if request.user.is_authenticated else None
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        from purchase.serializers import PurchaseReturnInputSerializer, PurchaseReturnSerializer
+        from purchase.services.purchase_return_service import PurchaseReturnService
+
+        serializer = PurchaseReturnInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            # Create purchase return using service
+            purchase_return = PurchaseReturnService.create_purchase_return(
+                data=data,
+                company=request.company,
+                user=user
+            )
+
+            serializer_output = PurchaseReturnSerializer(purchase_return)
+            return Response({
+                "message": "Purchase return created successfully",
+                "data": serializer_output.data
+            }, status=status.HTTP_201_CREATED)
+
+        except ValidationError as e:
+            return Response({
+                "error": "Validation error",
+                "details": e.detail if hasattr(e, 'detail') else str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Internal server error",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def delete(self, request, pk=None):
+        """Delete (cancel) purchase return"""
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if not pk:
+            return Response({
+                "error": "Purchase return ID is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user if request.user.is_authenticated else None
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            from purchase.services.purchase_return_service import PurchaseReturnService
+
+            # Cancel the return
+            purchase_return = PurchaseReturnService.cancel_purchase_return(
+                purchase_return_id=pk,
+                company=request.company,
+                user=user
+            )
+
+            return Response({
+                "message": "Purchase return cancelled successfully"
+            }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            return Response({
+                "error": "Validation error",
+                "details": e.detail if hasattr(e, 'detail') else str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Failed to cancel purchase return",
+                "details": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PurchaseReturnStatusAPIView(APIView):
+    """API view for updating purchase return status"""
+
+    def post(self, request, pk):
+        """Update purchase return status"""
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user if request.user.is_authenticated else None
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        from purchase.serializers import PurchaseReturnStatusUpdateSerializer, PurchaseReturnSerializer
+        from purchase.services.purchase_return_service import PurchaseReturnService
+        from purchase.models import PurchaseReturnStatus
+
+        serializer = PurchaseReturnStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_status = serializer.validated_data['status']
+
+        try:
+            if new_status == PurchaseReturnStatus.COMPLETED:
+                # Complete the return
+                purchase_return = PurchaseReturnService.complete_purchase_return(
+                    purchase_return_id=pk,
+                    company=request.company,
+                    user=user
+                )
+            elif new_status == PurchaseReturnStatus.CANCELLED:
+                # Cancel the return
+                purchase_return = PurchaseReturnService.cancel_purchase_return(
+                    purchase_return_id=pk,
+                    company=request.company,
+                    user=user
+                )
+            else:
+                return Response({
+                    "error": "Invalid status transition"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            serializer_output = PurchaseReturnSerializer(purchase_return)
+            return Response({
+                "message": f"Purchase return {new_status} successfully",
+                "data": serializer_output.data
+            }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            return Response({
+                "error": "Validation error",
+                "details": e.detail if hasattr(e, 'detail') else str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Failed to update status",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PurchaseReturnCompleteAPIView(APIView):
+    """API view to complete a purchase return"""
+
+    def post(self, request, pk):
+        """
+        Complete a purchase return.
+        This will update inventory and create accounting entries.
+        """
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user if request.user.is_authenticated else None
+
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            from purchase.services.purchase_return_service import PurchaseReturnService
+            from purchase.serializers import PurchaseReturnSerializer
+            
+            purchase_return = PurchaseReturnService.complete_purchase_return(
+                pk, request.company, user)
+            serializer = PurchaseReturnSerializer(purchase_return)
+            return Response({
+                "message": "Purchase return completed successfully",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            error_details = e.detail if hasattr(e, 'detail') else str(e)
+            return Response({
+                "error": "Validation error",
+                "details": error_details
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Internal server error",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PurchaseReturnCancelAPIView(APIView):
+    """API view to cancel a purchase return"""
+
+    def post(self, request, pk):
+        """
+        Cancel a purchase return.
+        Can only cancel returns in PENDING status.
+        """
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user if request.user.is_authenticated else None
+
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            from purchase.services.purchase_return_service import PurchaseReturnService
+            from purchase.serializers import PurchaseReturnSerializer
+            
+            purchase_return = PurchaseReturnService.cancel_purchase_return(
+                pk, request.company, user)
+            serializer = PurchaseReturnSerializer(purchase_return)
+            return Response({
+                "message": "Purchase return cancelled successfully",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            error_details = e.detail if hasattr(e, 'detail') else str(e)
+            return Response({
+                "error": "Validation error",
+                "details": error_details
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Internal server error",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PurchaseReturnableItemsAPIView(APIView):
+    """API view to get returnable items for a purchase"""
+
+    def get(self, request, purchase_id):
+        """
+        Get list of items that can be returned from a purchase.
+        Shows original quantities and already returned quantities.
+        """
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            from purchase.services.purchase_return_service import PurchaseReturnService
+            import traceback
+            
+            returnable_items = PurchaseReturnService.get_returnable_items(
+                purchase_id, request.company)
+            return Response({
+                "message": "Returnable items retrieved successfully",
+                "data": returnable_items
+            }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            error_details = e.detail if hasattr(e, 'detail') else str(e)
+            return Response({
+                "error": "Validation error",
+                "details": error_details
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            # Print full traceback for debugging
+            import traceback
+            traceback.print_exc()
+            return Response({
+                "error": "Internal server error",
+                "details": str(e),
+                "traceback": traceback.format_exc()
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 def test(request):
     product = get_object_or_404(Product, id=1)
     product.update(name='update katari')

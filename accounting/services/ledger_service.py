@@ -137,6 +137,46 @@ class LedgerService:
         return ledger_entry
 
     @staticmethod
+    def create_purchase_return_ledger_entry(purchase_return, company):
+        """
+        Create a single ledger entry for a purchase return transaction.
+
+        Single-Entry Accounting:
+        - Debit: Supplier Payable (reduces what we owe supplier) = grand_total
+
+        This effectively reverses the original purchase entry, reducing our debt to supplier.
+
+        Args:
+            purchase_return: PurchaseReturn instance
+            company: Company instance
+
+        Returns:
+            Ledger instance
+        """
+        content_type = ContentType.objects.get_for_model(purchase_return)
+        party = purchase_return.supplier  # Supplier is a proxy of Party
+
+        description = f"Purchase Return {purchase_return.return_number} (Original: {purchase_return.purchase.invoice_number})"
+        if purchase_return.notes:
+            description += f" - {purchase_return.notes[:100]}"
+
+        # Single entry: Supplier Payable (Debit - reduces our debt to supplier)
+        ledger_entry = Ledger.objects.create(
+            company=company,
+            party=party,
+            content_type=content_type,
+            object_id=purchase_return.id,
+            date=purchase_return.return_date,
+            txn_id=purchase_return.return_number or f"PRET-{purchase_return.id}",
+            txn_type=TransactionType.PURCHASE_RETURN,
+            description=description,
+            debit=purchase_return.grand_total,
+            credit=Decimal('0.00')
+        )
+
+        return ledger_entry
+
+    @staticmethod
     def create_payment_ledger_entry(payment, company, party, payment_type='received', source_object=None):
         """
         Create a single ledger entry for a payment transaction.
