@@ -1,4 +1,4 @@
-from .models import Purchase, PurchaseItem
+from .models import Purchase, PurchaseItem, PurchaseReturn, PurchaseReturnItem, PurchaseReturnStatus
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch, Q
@@ -12,6 +12,11 @@ from django.db import IntegrityError
 from .services.purchase_service import PurchaseService
 from .services.pdf_service import PurchaseInvoicePDF
 from .serializers import PurchaseSerializer
+from decimal import Decimal
+from django.utils import timezone
+from django.db import transaction
+from payment.models import Payment, PaymentType, PaymentMethod, PaymentStatus as PayStatus
+from accounting.services.ledger_service import LedgerService
 
 
 class PurchaseAPIView(APIView):
@@ -26,12 +31,24 @@ class PurchaseAPIView(APIView):
             }, status=status.HTTP_403_FORBIDDEN)
 
         if pk:
+            active_returns_qs = PurchaseReturn.objects.filter(
+                company=request.company,
+                status__in=[PurchaseReturnStatus.PENDING, PurchaseReturnStatus.COMPLETED]
+            ).prefetch_related(
+                Prefetch(
+                    'items',
+                    queryset=PurchaseReturnItem.objects.select_related('product', 'unit'),
+                    to_attr='active_items'
+                )
+            )
+
             purchase = get_object_or_404(
                 Purchase.objects.filter(company=request.company)
                 .select_related('supplier', 'warehouse', 'created_by', 'company')
                 .prefetch_related(
                     Prefetch('items', queryset=PurchaseItem.objects.select_related(
-                        'product', 'unit'))
+                        'product', 'unit')),
+                    Prefetch('returns', queryset=active_returns_qs, to_attr='active_returns')
                 ),
                 pk=pk
             )
@@ -39,11 +56,23 @@ class PurchaseAPIView(APIView):
             return Response({"message": "Purchase retrieved successfully", "data": serializer.data}, status=status.HTTP_200_OK)
         else:
             # Get base queryset
+            active_returns_qs = PurchaseReturn.objects.filter(
+                company=request.company,
+                status__in=[PurchaseReturnStatus.PENDING, PurchaseReturnStatus.COMPLETED]
+            ).prefetch_related(
+                Prefetch(
+                    'items',
+                    queryset=PurchaseReturnItem.objects.select_related('product', 'unit'),
+                    to_attr='active_items'
+                )
+            )
+
             purchases = Purchase.objects.filter(company=request.company).select_related(
                 'supplier', 'warehouse', 'created_by', 'company'
             ).prefetch_related(
                 Prefetch('items', queryset=PurchaseItem.objects.select_related(
-                    'product', 'unit'))
+                    'product', 'unit')),
+                Prefetch('returns', queryset=active_returns_qs, to_attr='active_returns')
             )
 
             # Apply search filter
@@ -143,6 +172,95 @@ class PurchaseAPIView(APIView):
             return Response({
                 "error": "Database integrity error",
                 "details": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Internal server error",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PurchaseTakePaymentAPIView(APIView):
+    """
+    Take payment for a Purchase without updating items.
+    Cash-only for now.
+    """
+
+    def post(self, request, pk):
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user if request.user.is_authenticated else None
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            amount = Decimal(str(request.data.get('amount', '0')))
+        except Exception:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Invalid amount"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount <= 0:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Amount must be greater than zero"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        purchase = get_object_or_404(
+            Purchase.objects.filter(company=request.company).select_related('supplier', 'company'),
+            pk=pk
+        )
+
+        try:
+            with transaction.atomic():
+                ref = f"CASH-PURCHASE-{purchase.invoice_number or purchase.id}-{int(timezone.now().timestamp())}"
+                payment = Payment.objects.create(
+                    company=request.company,
+                    payment_type=PaymentType.MADE,
+                    customer=None,
+                    supplier=purchase.supplier,
+                    sale=None,
+                    purchase=purchase,
+                    payment_method=PaymentMethod.CASH,
+                    amount=amount,
+                    date=request.data.get('date') or timezone.now().date(),
+                    reference_number=ref,
+                    status=PayStatus.COMPLETED,
+                    notes="Cash payment from invoice list",
+                    created_by=user
+                )
+
+                LedgerService.create_payment_ledger_entry(
+                    payment, request.company, purchase.supplier, payment_type='made', source_object=purchase
+                )
+                LedgerService.update_party_balance(purchase.supplier, request.company)
+
+                from purchase.services.purchase_service import PurchaseService
+                purchase.paid_amount = (purchase.paid_amount or Decimal('0.00')) + amount
+                purchase.payment_status = PurchaseService._calculate_payment_status(
+                    purchase.paid_amount, purchase.grand_total
+                )
+                purchase.save(update_fields=['paid_amount', 'payment_status'])
+
+                serializer = PurchaseSerializer(purchase)
+                return Response({
+                    "message": "Payment taken successfully",
+                    "data": serializer.data,
+                    "payment_id": payment.id
+                }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            error_details = e.detail if hasattr(e, 'detail') else str(e)
+            return Response({
+                "error": "Validation error",
+                "details": error_details
             }, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:

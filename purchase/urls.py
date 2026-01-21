@@ -8,6 +8,7 @@ urlpatterns = [
     # Company-aware Purchase CRUD endpoints
     path('', views.PurchaseAPIView.as_view(), name='purchase-list-create'),
     path('<int:pk>/', views.PurchaseAPIView.as_view(), name='purchase-detail'),
+    path('<int:pk>/take-payment/', views.PurchaseTakePaymentAPIView.as_view(), name='purchase-take-payment'),
     
     # PDF Invoice generation
     path('<int:pk>/pdf/', views.PurchaseInvoicePDFView.as_view(), name='purchase-invoice-pdf'),

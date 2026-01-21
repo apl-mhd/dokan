@@ -15,9 +15,61 @@ from rest_framework.exceptions import ValidationError
 from core.services.invoice_number import InvoiceNumberGenerator
 from core.models import DocumentType
 from accounting.services.ledger_service import LedgerService
+from payment.models import Payment, PaymentType, PaymentMethod, PaymentStatus as PayStatus
 
 
 class SaleService:
+    AUTO_PAYMENT_REFERENCE_PREFIX = "AUTO-SALE-PAYMENT-"
+    AUTO_PAYMENT_NOTE = "AUTO: Created/updated from Sale paid_amount"
+
+    @staticmethod
+    def _sync_auto_payment_from_paid_amount(sale, user, company):
+        """
+        Ensure the Payment table has a single auto-payment row reflecting sale.paid_amount.
+        This does NOT create ledger entries (sale ledger already handles paid_amount when delivered).
+        """
+        ref = f"{SaleService.AUTO_PAYMENT_REFERENCE_PREFIX}{sale.id}"
+
+        qs = Payment.objects.filter(company=company, sale=sale, reference_number=ref)
+        existing = qs.order_by("-id").first()
+
+        # If paid_amount is zero/negative, remove any auto payment
+        if (sale.paid_amount or Decimal("0.00")) <= 0:
+            qs.delete()
+            return
+
+        if existing is None:
+            Payment.objects.create(
+                company=company,
+                payment_type=PaymentType.RECEIVED,
+                customer=sale.customer,
+                supplier=None,
+                sale=sale,
+                purchase=None,
+                payment_method=PaymentMethod.CASH,
+                amount=sale.paid_amount,
+                date=sale.invoice_date,
+                reference_number=ref,
+                status=PayStatus.COMPLETED,
+                notes=SaleService.AUTO_PAYMENT_NOTE,
+                created_by=user,
+            )
+            return
+
+        # Keep a single row; remove duplicates if any
+        qs.exclude(pk=existing.pk).delete()
+
+        existing.customer = sale.customer
+        existing.supplier = None
+        existing.purchase = None
+        existing.payment_type = PaymentType.RECEIVED
+        existing.payment_method = PaymentMethod.CASH
+        existing.amount = sale.paid_amount
+        existing.date = sale.invoice_date
+        existing.status = PayStatus.COMPLETED
+        existing.notes = SaleService.AUTO_PAYMENT_NOTE
+        existing.updated_by = user
+        existing.save()
 
     @staticmethod
     def _validate_company_access(company, **kwargs):
@@ -389,6 +441,9 @@ class SaleService:
                         sale, company)
                     LedgerService.update_party_balance(sale.customer, company)
 
+                # Sync Payment table row from paid_amount (all statuses)
+                SaleService._sync_auto_payment_from_paid_amount(sale, user, company)
+
                 return sale
 
         except IntegrityError as e:
@@ -479,6 +534,9 @@ class SaleService:
                 # Create accounting ledger entries only if status is delivered
                 if sale_status == SaleStatus.DELIVERED:
                     SaleService._apply_ledger_entries(sale, company)
+
+                # Sync Payment table row from paid_amount (all statuses)
+                SaleService._sync_auto_payment_from_paid_amount(sale, user, company)
 
                 return sale
 

@@ -1,5 +1,6 @@
 from django.utils import timezone
 from rest_framework import serializers
+from decimal import Decimal
 from .models import (
     Purchase, PurchaseItem, PurchaseStatus, PaymentStatus,
     PurchaseReturn, PurchaseReturnItem, PurchaseReturnStatus
@@ -128,12 +129,81 @@ class PurchaseSerializer(serializers.ModelSerializer):
     warehouse_name = serializers.CharField(
         source='warehouse.name', read_only=True)
     company_name = serializers.CharField(source='company.name', read_only=True)
+    return_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Purchase
         fields = '__all__'
         read_only_fields = ['grand_total', 'company',
                             'created_by', 'created_at', 'updated_at']
+
+    def get_return_status(self, obj):
+        """
+        Return status for this purchase based on active Purchase Returns.
+
+        Values:
+          - not_returned
+          - partially_returned
+          - fully_returned
+        """
+        items_manager = getattr(obj, 'items', None)
+        items = items_manager.all() if items_manager is not None else []
+        if hasattr(items, 'exists'):
+            if not items.exists():
+                return 'not_returned'
+        elif not items:
+            return 'not_returned'
+
+        # Sum purchased quantities per product in base units
+        purchased_by_product = {}
+        for item in items:
+            try:
+                base_qty = item.unit.convert_to_base_unit(item.quantity)
+            except Exception:
+                base_qty = Decimal(str(item.quantity or 0))
+            purchased_by_product[item.product_id] = purchased_by_product.get(
+                item.product_id, Decimal('0.00')) + base_qty
+
+        # Collect active return items (pending + completed)
+        active_returns = getattr(obj, 'active_returns', None)
+        if active_returns is None:
+            # Fallback (should be prefetched in the view for list performance)
+            active_returns = obj.returns.filter(
+                status__in=['pending', 'completed']).prefetch_related('items__unit', 'items__product')
+
+        returned_by_product = {}
+        for ret in active_returns:
+            if getattr(ret, 'active_items', None) is not None:
+                ret_items = ret.active_items
+            else:
+                manager = getattr(ret, 'items', None)
+                ret_items = manager.all() if manager is not None else []
+            for ritem in ret_items:
+                try:
+                    base_qty = ritem.unit.convert_to_base_unit(ritem.quantity)
+                except Exception:
+                    base_qty = Decimal(str(ritem.quantity or 0))
+                returned_by_product[ritem.product_id] = returned_by_product.get(
+                    ritem.product_id, Decimal('0.00')) + base_qty
+
+        if not returned_by_product:
+            return 'not_returned'
+
+        any_returned = False
+        all_fully = True
+
+        for product_id, purchased_qty in purchased_by_product.items():
+            returned_qty = returned_by_product.get(product_id, Decimal('0.00'))
+            if returned_qty > 0:
+                any_returned = True
+            if returned_qty < purchased_qty:
+                all_fully = False
+
+        if not any_returned:
+            return 'not_returned'
+        if all_fully:
+            return 'fully_returned'
+        return 'partially_returned'
 
     def validate_paid_amount(self, value):
         if value < 0:

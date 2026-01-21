@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal
 from sale.models import (
     Sale, SaleItem, SaleStatus, PaymentStatus,
     SaleReturn, SaleReturnItem, SaleReturnStatus, RefundStatus
@@ -115,6 +116,7 @@ class SaleItemSerializer(serializers.ModelSerializer):
 class SaleSerializer(serializers.ModelSerializer):
     """Serializer for sale output (read operations)"""
     items = SaleItemOutputSerializer(many=True, read_only=True)
+    return_status = serializers.SerializerMethodField()
     customer_name = serializers.CharField(
         source='customer.name', read_only=True)
     customer_phone = serializers.CharField(
@@ -130,6 +132,47 @@ class SaleSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['grand_total', 'company',
                             'created_by', 'created_at', 'updated_at']
+
+    def get_return_status(self, obj):
+        """
+        Return status for a sale based on non-cancelled sale returns:
+        - not_returned
+        - partially_returned
+        - fully_returned
+        """
+        items = getattr(obj, 'items', None)
+        if not items:
+            return 'not_returned'
+
+        any_returned = False
+        all_fully_returned = True
+
+        for sale_item in items.all() if hasattr(items, 'all') else items:
+            # Prefer prefetched attr to avoid DB hits
+            return_items = getattr(sale_item, 'active_return_items', None)
+            if return_items is None:
+                return_items = sale_item.return_items.filter(
+                    sale_return__status__in=[
+                        SaleReturnStatus.PENDING, SaleReturnStatus.COMPLETED
+                    ]
+                )
+
+            returned_qty = sum(
+                (ri.returned_quantity for ri in return_items),
+                Decimal('0.0000')
+            )
+
+            if returned_qty > 0:
+                any_returned = True
+
+            if returned_qty < sale_item.quantity:
+                all_fully_returned = False
+
+        if not any_returned:
+            return 'not_returned'
+        if all_fully_returned:
+            return 'fully_returned'
+        return 'partially_returned'
 
     def validate_paid_amount(self, value):
         if value < 0:

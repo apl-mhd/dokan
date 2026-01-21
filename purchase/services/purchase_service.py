@@ -16,9 +16,59 @@ from rest_framework.exceptions import ValidationError
 from core.services.invoice_number import InvoiceNumberGenerator
 from core.models import DocumentType
 from accounting.services.ledger_service import LedgerService
+from payment.models import Payment, PaymentType, PaymentMethod, PaymentStatus as PayStatus
 
 
 class PurchaseService:
+    AUTO_PAYMENT_REFERENCE_PREFIX = "AUTO-PURCHASE-PAYMENT-"
+    AUTO_PAYMENT_NOTE = "AUTO: Created/updated from Purchase paid_amount"
+
+    @staticmethod
+    def _sync_auto_payment_from_paid_amount(purchase, user, company):
+        """
+        Ensure the Payment table has a single auto-payment row reflecting purchase.paid_amount.
+        This does NOT create ledger entries (purchase ledger already handles paid_amount when completed).
+        """
+        ref = f"{PurchaseService.AUTO_PAYMENT_REFERENCE_PREFIX}{purchase.id}"
+
+        qs = Payment.objects.filter(company=company, purchase=purchase, reference_number=ref)
+        existing = qs.order_by("-id").first()
+
+        if (purchase.paid_amount or Decimal("0.00")) <= 0:
+            qs.delete()
+            return
+
+        if existing is None:
+            Payment.objects.create(
+                company=company,
+                payment_type=PaymentType.MADE,
+                customer=None,
+                supplier=purchase.supplier,
+                sale=None,
+                purchase=purchase,
+                payment_method=PaymentMethod.CASH,
+                amount=purchase.paid_amount,
+                date=purchase.invoice_date,
+                reference_number=ref,
+                status=PayStatus.COMPLETED,
+                notes=PurchaseService.AUTO_PAYMENT_NOTE,
+                created_by=user,
+            )
+            return
+
+        qs.exclude(pk=existing.pk).delete()
+
+        existing.customer = None
+        existing.supplier = purchase.supplier
+        existing.sale = None
+        existing.payment_type = PaymentType.MADE
+        existing.payment_method = PaymentMethod.CASH
+        existing.amount = purchase.paid_amount
+        existing.date = purchase.invoice_date
+        existing.status = PayStatus.COMPLETED
+        existing.notes = PurchaseService.AUTO_PAYMENT_NOTE
+        existing.updated_by = user
+        existing.save()
 
     @staticmethod
     def _validate_company_access(company, **kwargs):
@@ -392,6 +442,9 @@ class PurchaseService:
                         purchase, company)
                     LedgerService.update_party_balance(purchase.supplier, company)
 
+                # Sync Payment table row from paid_amount (all statuses)
+                PurchaseService._sync_auto_payment_from_paid_amount(purchase, user, company)
+
                 return purchase
 
         except IntegrityError as e:
@@ -488,6 +541,9 @@ class PurchaseService:
                 # Create accounting ledger entries only if status is completed
                 if purchase_status == PurchaseStatus.COMPLETED:
                     PurchaseService._apply_ledger_entries(purchase, company)
+
+                # Sync Payment table row from paid_amount (all statuses)
+                PurchaseService._sync_auto_payment_from_paid_amount(purchase, user, company)
 
                 return purchase
 

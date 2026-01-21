@@ -1,4 +1,4 @@
-from .models import Sale, SaleItem, SaleReturn, SaleReturnItem
+from .models import Sale, SaleItem, SaleReturn, SaleReturnItem, SaleReturnStatus
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch, Q
@@ -14,6 +14,11 @@ from .services.sale_service import SaleService
 from .services.sale_return_service import SaleReturnService
 from .services.pdf_service import SaleInvoicePDF
 from .serializers import SaleSerializer, SaleReturnSerializer
+from decimal import Decimal
+from django.utils import timezone
+from django.db import transaction
+from payment.models import Payment, PaymentType, PaymentMethod, PaymentStatus as PayStatus
+from accounting.services.ledger_service import LedgerService
 
 
 class SaleAPIView(APIView):
@@ -32,8 +37,20 @@ class SaleAPIView(APIView):
                 Sale.objects.filter(company=request.company)
                 .select_related('customer', 'warehouse', 'created_by', 'company')
                 .prefetch_related(
-                    Prefetch('items', queryset=SaleItem.objects.select_related(
-                        'product', 'unit'))
+                    Prefetch(
+                        'items',
+                        queryset=SaleItem.objects.select_related('product', 'unit').prefetch_related(
+                            Prefetch(
+                                'return_items',
+                                queryset=SaleReturnItem.objects.filter(
+                                    sale_return__status__in=[
+                                        SaleReturnStatus.PENDING, SaleReturnStatus.COMPLETED
+                                    ]
+                                ).select_related('sale_return'),
+                                to_attr='active_return_items'
+                            )
+                        )
+                    )
                 ),
                 pk=pk
             )
@@ -44,8 +61,20 @@ class SaleAPIView(APIView):
             sales = Sale.objects.filter(company=request.company).select_related(
                 'customer', 'warehouse', 'created_by', 'company'
             ).prefetch_related(
-                Prefetch('items', queryset=SaleItem.objects.select_related(
-                    'product', 'unit'))
+                Prefetch(
+                    'items',
+                    queryset=SaleItem.objects.select_related('product', 'unit').prefetch_related(
+                        Prefetch(
+                            'return_items',
+                            queryset=SaleReturnItem.objects.filter(
+                                sale_return__status__in=[
+                                    SaleReturnStatus.PENDING, SaleReturnStatus.COMPLETED
+                                ]
+                            ).select_related('sale_return'),
+                            to_attr='active_return_items'
+                        )
+                    )
+                )
             )
 
             # Apply search filter
@@ -143,6 +172,98 @@ class SaleAPIView(APIView):
             return Response({
                 "error": "Database integrity error",
                 "details": str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Internal server error",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SaleTakePaymentAPIView(APIView):
+    """
+    Take payment for a Sale without updating items (safe with SaleReturns).
+    Cash-only for now.
+    """
+
+    def post(self, request, pk):
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user if request.user.is_authenticated else None
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            amount = Decimal(str(request.data.get('amount', '0')))
+        except Exception:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Invalid amount"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount <= 0:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Amount must be greater than zero"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        sale = get_object_or_404(
+            Sale.objects.filter(company=request.company).select_related('customer', 'company'),
+            pk=pk
+        )
+
+        try:
+            with transaction.atomic():
+                # Create payment row (cash only)
+                ref = f"CASH-SALE-{sale.invoice_number or sale.id}-{int(timezone.now().timestamp())}"
+                payment = Payment.objects.create(
+                    company=request.company,
+                    payment_type=PaymentType.RECEIVED,
+                    customer=sale.customer,
+                    supplier=None,
+                    sale=sale,
+                    purchase=None,
+                    payment_method=PaymentMethod.CASH,
+                    amount=amount,
+                    date=request.data.get('date') or timezone.now().date(),
+                    reference_number=ref,
+                    status=PayStatus.COMPLETED,
+                    notes="Cash payment from invoice list",
+                    created_by=user
+                )
+
+                # Ledger entry + party balance (credit receivable)
+                LedgerService.create_payment_ledger_entry(
+                    payment, request.company, sale.customer, payment_type='received', source_object=sale
+                )
+                LedgerService.update_party_balance(sale.customer, request.company)
+
+                # Update sale paid amount + status
+                from sale.services.sale_service import SaleService
+                sale.paid_amount = (sale.paid_amount or Decimal('0.00')) + amount
+                sale.payment_status = SaleService._calculate_payment_status(
+                    sale.paid_amount, sale.grand_total
+                )
+                sale.save(update_fields=['paid_amount', 'payment_status'])
+
+                serializer = SaleSerializer(sale)
+                return Response({
+                    "message": "Payment taken successfully",
+                    "data": serializer.data,
+                    "payment_id": payment.id
+                }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            error_details = e.detail if hasattr(e, 'detail') else str(e)
+            return Response({
+                "error": "Validation error",
+                "details": error_details
             }, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
