@@ -214,7 +214,8 @@ class SaleTakePaymentAPIView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         sale = get_object_or_404(
-            Sale.objects.filter(company=request.company).select_related('customer', 'company'),
+            Sale.objects.filter(company=request.company).select_related(
+                'customer', 'company'),
             pk=pk
         )
 
@@ -242,11 +243,13 @@ class SaleTakePaymentAPIView(APIView):
                 LedgerService.create_payment_ledger_entry(
                     payment, request.company, sale.customer, payment_type='received', source_object=sale
                 )
-                LedgerService.update_party_balance(sale.customer, request.company)
+                LedgerService.update_party_balance(
+                    sale.customer, request.company)
 
                 # Update sale paid amount + status
                 from sale.services.sale_service import SaleService
-                sale.paid_amount = (sale.paid_amount or Decimal('0.00')) + amount
+                sale.paid_amount = (
+                    sale.paid_amount or Decimal('0.00')) + amount
                 sale.payment_status = SaleService._calculate_payment_status(
                     sale.paid_amount, sale.grand_total
                 )

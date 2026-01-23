@@ -116,7 +116,8 @@ class SaleItemSerializer(serializers.ModelSerializer):
 class SaleSerializer(serializers.ModelSerializer):
     """Serializer for sale output (read operations)"""
     items = SaleItemOutputSerializer(many=True, read_only=True)
-    return_status = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    return_status = serializers.SerializerMethodField()  # Keep for backward compatibility but not used in frontend
     customer_name = serializers.CharField(
         source='customer.name', read_only=True)
     customer_phone = serializers.CharField(
@@ -132,6 +133,28 @@ class SaleSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['grand_total', 'company',
                             'created_by', 'created_at', 'updated_at']
+
+    def get_status(self, obj):
+        """
+        Return combined status that includes return info:
+        - If delivered and fully returned -> 'returned'
+        - If delivered and partially returned -> 'partial_return'
+        - Otherwise return the original status
+        """
+        original_status = obj.status
+        
+        # Only modify status if it's delivered and has returns
+        if original_status != SaleStatus.DELIVERED:
+            return original_status
+        
+        return_status = self.get_return_status(obj)
+        
+        if return_status == 'fully_returned':
+            return SaleStatus.RETURNED
+        elif return_status == 'partially_returned':
+            return SaleStatus.PARTIALLY_RETURNED
+        
+        return original_status
 
     def get_return_status(self, obj):
         """

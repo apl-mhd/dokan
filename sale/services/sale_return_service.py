@@ -66,41 +66,67 @@ class SaleReturnService:
             )
 
     @staticmethod
-    def _validate_return_quantity(sale_item, requested_quantity):
+    def _validate_return_quantity(sale_item, requested_quantity, unit=None, exclude_return_item=None):
         """
         Validate that return quantity doesn't exceed available quantity.
+        Handles unit conversion if different units are used.
         
         Args:
             sale_item: SaleItem instance
             requested_quantity: Decimal quantity to return
+            unit: Optional Unit instance for requested_quantity (if different from sale_item.unit)
+            exclude_return_item: Optional SaleReturnItem to exclude from already-returned calculation (for updates)
             
         Returns:
-            Decimal: Total already returned quantity
+            Decimal: Total already returned quantity (in sale_item's unit)
             
         Raises:
             ValidationError: If return quantity exceeds available
         """
-        # Get total already returned for this sale item
+        # Use sale_item's unit if no unit specified
+        if unit is None:
+            unit = sale_item.unit
+        
+        # Convert requested quantity to sale_item's unit for comparison
+        if unit.id != sale_item.unit.id:
+            # Convert to base unit first, then to sale_item's unit
+            requested_base_qty = unit.convert_to_base_unit(requested_quantity)
+            requested_in_sale_unit = sale_item.unit.convert_from_base_unit(requested_base_qty)
+        else:
+            requested_in_sale_unit = requested_quantity
+        
+        # Get total already returned for this sale item (convert all to sale_item's unit)
         existing_returns = SaleReturnItem.objects.filter(
             sale_item=sale_item,
             sale_return__status__in=[SaleReturnStatus.PENDING, SaleReturnStatus.COMPLETED]
         )
         
-        total_returned = sum(
-            item.returned_quantity for item in existing_returns
-        ) if existing_returns.exists() else Decimal('0.00')
+        # Exclude current return item if updating
+        if exclude_return_item:
+            existing_returns = existing_returns.exclude(id=exclude_return_item.id)
         
-        available_to_return = sale_item.quantity - total_returned
+        total_returned_in_sale_unit = Decimal('0.00')
+        for return_item in existing_returns:
+            if return_item.unit.id == sale_item.unit.id:
+                # Same unit, use directly
+                total_returned_in_sale_unit += return_item.returned_quantity
+            else:
+                # Convert to base unit, then to sale_item's unit
+                returned_base_qty = return_item.unit.convert_to_base_unit(return_item.returned_quantity)
+                returned_in_sale_unit = sale_item.unit.convert_from_base_unit(returned_base_qty)
+                total_returned_in_sale_unit += returned_in_sale_unit
         
-        if requested_quantity > available_to_return:
+        available_to_return = sale_item.quantity - total_returned_in_sale_unit
+        
+        if requested_in_sale_unit > available_to_return:
             raise ValidationError(
-                f"Cannot return {requested_quantity} units of {sale_item.product.name}. "
-                f"Original quantity: {sale_item.quantity}, "
-                f"Already returned: {total_returned}, "
-                f"Available to return: {available_to_return}"
+                f"Cannot return {requested_quantity} {unit.name} of {sale_item.product.name}. "
+                f"Original quantity: {sale_item.quantity} {sale_item.unit.name}, "
+                f"Already returned: {total_returned_in_sale_unit} {sale_item.unit.name}, "
+                f"Available to return: {available_to_return} {sale_item.unit.name}"
             )
         
-        return total_returned
+        return total_returned_in_sale_unit
 
     @staticmethod
     def _update_stock(product, warehouse, company, quantity, unit, operation='add'):
@@ -224,8 +250,14 @@ class SaleReturnService:
             
             returned_quantity = Decimal(str(item_data['returned_quantity']))
             
-            # Validate return quantity
-            SaleReturnService._validate_return_quantity(sale_item, returned_quantity)
+            # Get unit if specified, otherwise use sale_item's unit
+            unit = sale_item.unit
+            if 'unit' in item_data and item_data['unit']:
+                from product.models import Unit
+                unit = get_object_or_404(Unit, id=item_data['unit'])
+            
+            # Validate return quantity (handles unit conversion if needed)
+            SaleReturnService._validate_return_quantity(sale_item, returned_quantity, unit=unit)
             
             # Calculate line total using original sale price
             line_total = returned_quantity * sale_item.unit_price
@@ -237,7 +269,7 @@ class SaleReturnService:
                 company=company,
                 product=sale_item.product,
                 returned_quantity=returned_quantity,
-                unit=sale_item.unit,
+                unit=unit,  # Use the unit (may be different from sale_item.unit if specified)
                 unit_price=sale_item.unit_price,
                 line_total=line_total,
                 condition=item_data.get('condition', 'good'),

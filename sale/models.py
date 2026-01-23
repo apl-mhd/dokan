@@ -12,6 +12,9 @@ from warehouse.models import Warehouse
 class SaleStatus(models.TextChoices):
     PENDING = 'pending', 'Pending'
     DELIVERED = 'delivered', 'Delivered'
+
+    PARTIALLY_RETURNED = 'partial_return', 'Partially Returned'
+    RETURNED = 'returned', 'Fully Returned'
     CANCELLED = 'cancelled', 'Cancelled'
 
 

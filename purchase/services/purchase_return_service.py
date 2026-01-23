@@ -79,29 +79,77 @@ class PurchaseReturnService:
             )
 
     @staticmethod
-    def _validate_return_quantity(purchase_item, requested_quantity):
+    def _validate_return_quantity(purchase, product, requested_quantity, unit, company, exclude_return_item=None):
         """
         Validate that return quantity doesn't exceed available quantity.
+        Checks against original purchase quantity and already returned quantities.
 
         Args:
-            purchase_item: PurchaseItem instance
-            requested_quantity: Decimal quantity to return
+            purchase: Purchase instance
+            product: Product instance
+            requested_quantity: Decimal quantity to return (in the given unit)
+            unit: Unit instance for the requested quantity
+            company: Company instance
+            exclude_return_item: Optional PurchaseReturnItem to exclude from already-returned calculation (for updates)
 
         Returns:
-            Decimal: Total already returned quantity
+            Decimal: Total already returned quantity (in base units)
 
         Raises:
             ValidationError: If return quantity exceeds available
         """
-        # For purchase returns, we check against the original purchase item
-        # We don't track per-item returns in this simplified version
-        available_to_return = purchase_item.quantity
-
-        if requested_quantity > available_to_return:
+        # Convert requested quantity to base unit for comparison
+        requested_base_qty = unit.convert_to_base_unit(requested_quantity)
+        
+        # Find the original purchase item for this product
+        purchase_item = PurchaseItem.objects.filter(
+            purchase=purchase,
+            product=product,
+            company=company
+        ).first()
+        
+        if not purchase_item:
             raise ValidationError(
-                f"Cannot return {requested_quantity} units of {purchase_item.product.name}. "
-                f"Original purchase quantity: {purchase_item.quantity}"
+                f"Product {product.name} was not found in purchase {purchase.invoice_number or purchase.id}."
             )
+        
+        # Get original quantity in base units
+        original_base_qty = purchase_item.unit.convert_to_base_unit(purchase_item.quantity)
+        
+        # Get total already returned for this product from this purchase (in base units)
+        existing_returns = PurchaseReturnItem.objects.filter(
+            company=company,
+            product=product,
+            purchase_return__purchase=purchase,
+            purchase_return__status__in=[PurchaseReturnStatus.PENDING, PurchaseReturnStatus.COMPLETED]
+        )
+        
+        # Exclude current return item if updating
+        if exclude_return_item:
+            existing_returns = existing_returns.exclude(id=exclude_return_item.id)
+        
+        total_returned_base_qty = Decimal('0.00')
+        for return_item in existing_returns:
+            returned_base_qty = return_item.unit.convert_to_base_unit(return_item.quantity)
+            total_returned_base_qty += returned_base_qty
+        
+        available_to_return_base_qty = original_base_qty - total_returned_base_qty
+        
+        if requested_base_qty > available_to_return_base_qty:
+            # Convert available quantity back to requested unit for clearer error message
+            try:
+                available_in_requested_unit = unit.convert_from_base_unit(available_to_return_base_qty)
+            except Exception:
+                available_in_requested_unit = available_to_return_base_qty
+            
+            raise ValidationError(
+                f"Cannot return {requested_quantity} {unit.name} of {product.name}. "
+                f"Original purchase quantity: {purchase_item.quantity} {purchase_item.unit.name}, "
+                f"Already returned: {total_returned_base_qty} base units, "
+                f"Available to return: {available_in_requested_unit} {unit.name} ({available_to_return_base_qty} base units)"
+            )
+        
+        return total_returned_base_qty
 
     @staticmethod
     def _update_stock(product, warehouse, quantity, unit, company, direction=StockDirection.OUT):
@@ -354,6 +402,16 @@ class PurchaseReturnService:
 
         quantity = Decimal(str(item_data['quantity']))
         unit_price = Decimal(str(item_data['unit_price']))
+        
+        # Validate return quantity doesn't exceed available
+        PurchaseReturnService._validate_return_quantity(
+            purchase=purchase_return.purchase,
+            product=product,
+            requested_quantity=quantity,
+            unit=unit,
+            company=company
+        )
+        
         line_total = PurchaseReturnService._calculate_line_total(
             quantity, unit_price)
 

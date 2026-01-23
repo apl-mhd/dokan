@@ -124,18 +124,41 @@ class PurchaseItemSerializer(serializers.ModelSerializer):
 class PurchaseSerializer(serializers.ModelSerializer):
     """Serializer for purchase output (read operations)"""
     items = ItemSerializer(many=True, read_only=True)
+    status = serializers.SerializerMethodField()
+    return_status = serializers.SerializerMethodField()  # Keep for backward compatibility but not used in frontend
     supplier_name = serializers.CharField(
         source='supplier.name', read_only=True)
     warehouse_name = serializers.CharField(
         source='warehouse.name', read_only=True)
     company_name = serializers.CharField(source='company.name', read_only=True)
-    return_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Purchase
         fields = '__all__'
         read_only_fields = ['grand_total', 'company',
                             'created_by', 'created_at', 'updated_at']
+
+    def get_status(self, obj):
+        """
+        Return combined status that includes return info:
+        - If completed and fully returned -> 'returned'
+        - If completed and partially returned -> 'partial_return'
+        - Otherwise return the original status
+        """
+        original_status = obj.status
+        
+        # Only modify status if it's completed and has returns
+        if original_status != PurchaseStatus.COMPLETED:
+            return original_status
+        
+        return_status = self.get_return_status(obj)
+        
+        if return_status == 'fully_returned':
+            return PurchaseStatus.RETURNED
+        elif return_status == 'partially_returned':
+            return PurchaseStatus.PARTIALLY_RETURNED
+        
+        return original_status
 
     def get_return_status(self, obj):
         """

@@ -9,6 +9,9 @@ from product.models import Product, Unit
 class PurchaseStatus(models.TextChoices):
     PENDING = 'pending', 'Pending'
     COMPLETED = 'completed', 'Completed'
+
+    PARTIALLY_RETURNED = 'partial_return', 'Partially Returned'
+    RETURNED = 'returned', 'Fully Returned'
     CANCELLED = 'cancelled', 'Cancelled'
 
 
