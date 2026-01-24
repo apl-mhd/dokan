@@ -1,12 +1,14 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count, Q, F, DecimalField
 from django.utils import timezone
 from datetime import timedelta
+from decimal import Decimal
 from purchase.models import Purchase
 from sale.models import Sale
 from inventory.models import Stock
+from payment.models import Payment, PaymentType, PaymentStatus
 
 
 class DashboardStatsAPIView(APIView):
@@ -42,12 +44,22 @@ class DashboardStatsAPIView(APIView):
             count=Count('id')
         )
         
-        pending_customer_dues = Sale.objects.filter(
-            company=company,
-            status='pending'
+        # Calculate customer dues: sum of (grand_total - paid_amount) for all sales
+        # This gives the actual outstanding amount customers owe
+        # Only count sales where there's an outstanding balance (grand_total > paid_amount)
+        customer_dues_result = Sale.objects.filter(
+            company=company
+        ).annotate(
+            outstanding=F('grand_total') - F('paid_amount')
+        ).filter(
+            outstanding__gt=0
         ).aggregate(
-            total=Sum('grand_total')
+            total_dues=Sum('outstanding', output_field=DecimalField())
         )
+        
+        pending_customer_dues = {
+            'total': customer_dues_result['total_dues'] or Decimal('0.00')
+        }
         
         # Purchase Statistics
         purchases_today = Purchase.objects.filter(
@@ -66,12 +78,22 @@ class DashboardStatsAPIView(APIView):
             count=Count('id')
         )
         
-        supplier_outstanding = Purchase.objects.filter(
-            company=company,
-            status='pending'
+        # Calculate supplier dues: sum of (grand_total - paid_amount) for all purchases
+        # This gives the actual outstanding amount owed to suppliers
+        # Only count purchases where there's an outstanding balance (grand_total > paid_amount)
+        supplier_dues_result = Purchase.objects.filter(
+            company=company
+        ).annotate(
+            outstanding=F('grand_total') - F('paid_amount')
+        ).filter(
+            outstanding__gt=0
         ).aggregate(
-            total=Sum('grand_total')
+            total_dues=Sum('outstanding', output_field=DecimalField())
         )
+        
+        supplier_outstanding = {
+            'total': supplier_dues_result['total_dues'] or Decimal('0.00')
+        }
         
         # Get period parameter (weekly or monthly)
         period = request.query_params.get('period', 'weekly')
@@ -127,15 +149,19 @@ class DashboardStatsAPIView(APIView):
                 })
         
         # Sales Due Trend (Last 7 days or 30 days)
+        # Calculate outstanding amount (grand_total - paid_amount) for each day
         sales_due_trend = []
         if period == 'weekly':
             for i in range(6, -1, -1):
                 date = today - timedelta(days=i)
                 daily_dues = Sale.objects.filter(
                     company=company,
-                    invoice_date=date,
-                    status='pending'
-                ).aggregate(total=Sum('grand_total'))
+                    invoice_date=date
+                ).annotate(
+                    outstanding=F('grand_total') - F('paid_amount')
+                ).filter(
+                    outstanding__gt=0
+                ).aggregate(total=Sum('outstanding', output_field=DecimalField()))
                 sales_due_trend.append({
                     'date': date.strftime('%Y-%m-%d'),
                     'amount': float(daily_dues['total'] or 0)
@@ -145,24 +171,31 @@ class DashboardStatsAPIView(APIView):
                 date = today - timedelta(days=i)
                 daily_dues = Sale.objects.filter(
                     company=company,
-                    invoice_date=date,
-                    status='pending'
-                ).aggregate(total=Sum('grand_total'))
+                    invoice_date=date
+                ).annotate(
+                    outstanding=F('grand_total') - F('paid_amount')
+                ).filter(
+                    outstanding__gt=0
+                ).aggregate(total=Sum('outstanding', output_field=DecimalField()))
                 sales_due_trend.append({
                     'date': date.strftime('%Y-%m-%d'),
                     'amount': float(daily_dues['total'] or 0)
                 })
         
         # Purchase Due Trend (Last 7 days or 30 days)
+        # Calculate outstanding amount (grand_total - paid_amount) for each day
         purchase_due_trend = []
         if period == 'weekly':
             for i in range(6, -1, -1):
                 date = today - timedelta(days=i)
                 daily_dues = Purchase.objects.filter(
                     company=company,
-                    invoice_date=date,
-                    status='pending'
-                ).aggregate(total=Sum('grand_total'))
+                    invoice_date=date
+                ).annotate(
+                    outstanding=F('grand_total') - F('paid_amount')
+                ).filter(
+                    outstanding__gt=0
+                ).aggregate(total=Sum('outstanding', output_field=DecimalField()))
                 purchase_due_trend.append({
                     'date': date.strftime('%Y-%m-%d'),
                     'amount': float(daily_dues['total'] or 0)
@@ -172,12 +205,73 @@ class DashboardStatsAPIView(APIView):
                 date = today - timedelta(days=i)
                 daily_dues = Purchase.objects.filter(
                     company=company,
-                    invoice_date=date,
-                    status='pending'
-                ).aggregate(total=Sum('grand_total'))
+                    invoice_date=date
+                ).annotate(
+                    outstanding=F('grand_total') - F('paid_amount')
+                ).filter(
+                    outstanding__gt=0
+                ).aggregate(total=Sum('outstanding', output_field=DecimalField()))
                 purchase_due_trend.append({
                     'date': date.strftime('%Y-%m-%d'),
                     'amount': float(daily_dues['total'] or 0)
+                })
+        
+        # Customer Payment Trend - Weekly (Last 7 days) or Monthly (Last 30 days)
+        customer_payment_trend = []
+        if period == 'weekly':
+            for i in range(6, -1, -1):
+                date = today - timedelta(days=i)
+                daily_payments = Payment.objects.filter(
+                    company=company,
+                    payment_type=PaymentType.RECEIVED,
+                    date=date,
+                    status=PaymentStatus.COMPLETED
+                ).aggregate(total=Sum('amount'))
+                customer_payment_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_payments['total'] or 0)
+                })
+        else:  # monthly
+            for i in range(29, -1, -1):
+                date = today - timedelta(days=i)
+                daily_payments = Payment.objects.filter(
+                    company=company,
+                    payment_type=PaymentType.RECEIVED,
+                    date=date,
+                    status=PaymentStatus.COMPLETED
+                ).aggregate(total=Sum('amount'))
+                customer_payment_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_payments['total'] or 0)
+                })
+        
+        # Supplier Payment Trend - Weekly (Last 7 days) or Monthly (Last 30 days)
+        supplier_payment_trend = []
+        if period == 'weekly':
+            for i in range(6, -1, -1):
+                date = today - timedelta(days=i)
+                daily_payments = Payment.objects.filter(
+                    company=company,
+                    payment_type=PaymentType.MADE,
+                    date=date,
+                    status=PaymentStatus.COMPLETED
+                ).aggregate(total=Sum('amount'))
+                supplier_payment_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_payments['total'] or 0)
+                })
+        else:  # monthly
+            for i in range(29, -1, -1):
+                date = today - timedelta(days=i)
+                daily_payments = Payment.objects.filter(
+                    company=company,
+                    payment_type=PaymentType.MADE,
+                    date=date,
+                    status=PaymentStatus.COMPLETED
+                ).aggregate(total=Sum('amount'))
+                supplier_payment_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_payments['total'] or 0)
                 })
         
         # Low Stock Items
@@ -218,6 +312,12 @@ class DashboardStatsAPIView(APIView):
                     "supplier_outstanding": float(supplier_outstanding['total'] or 0),
                     "trend": purchase_trend,
                     "due_trend": purchase_due_trend
+                },
+                "customer_payments": {
+                    "trend": customer_payment_trend
+                },
+                "supplier_payments": {
+                    "trend": supplier_payment_trend
                 },
                 "low_stock": list(low_stock)
             }
