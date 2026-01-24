@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Sum, Count, Q, F, DecimalField
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
 from decimal import Decimal
 from purchase.models import Purchase
 from sale.models import Sale
@@ -95,58 +95,52 @@ class DashboardStatsAPIView(APIView):
             'total': supplier_dues_result['total_dues'] or Decimal('0.00')
         }
         
-        # Get period parameter (weekly or monthly)
+        # Get period parameter (weekly, monthly, or custom)
         period = request.query_params.get('period', 'weekly')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
         
-        # Sales Trend - Weekly (Last 7 days) or Monthly (Last 30 days)
+        # Determine date range
+        if date_from and date_to and period == 'custom':
+            try:
+                start_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                end_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                date_list = []
+                current_date = start_date
+                while current_date <= end_date:
+                    date_list.append(current_date)
+                    current_date += timedelta(days=1)
+            except ValueError:
+                # Invalid date format, fall back to weekly
+                date_list = [today - timedelta(days=i) for i in range(6, -1, -1)]
+        elif period == 'weekly':
+            date_list = [today - timedelta(days=i) for i in range(6, -1, -1)]
+        else:  # monthly
+            date_list = [today - timedelta(days=i) for i in range(29, -1, -1)]
+        
+        # Sales Trend
         sales_trend = []
-        if period == 'weekly':
-            for i in range(6, -1, -1):
-                date = today - timedelta(days=i)
-                daily_sales = Sale.objects.filter(
-                    company=company,
-                    invoice_date=date
-                ).aggregate(total=Sum('grand_total'))
-                sales_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_sales['total'] or 0)
-                })
-        else:  # monthly
-            for i in range(29, -1, -1):
-                date = today - timedelta(days=i)
-                daily_sales = Sale.objects.filter(
-                    company=company,
-                    invoice_date=date
-                ).aggregate(total=Sum('grand_total'))
-                sales_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_sales['total'] or 0)
-                })
+        for date in date_list:
+            daily_sales = Sale.objects.filter(
+                company=company,
+                invoice_date=date
+            ).aggregate(total=Sum('grand_total'))
+            sales_trend.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'amount': float(daily_sales['total'] or 0)
+            })
         
-        # Purchase Trend - Weekly (Last 7 days) or Monthly (Last 30 days)
+        # Purchase Trend - Use same date_list as sales
         purchase_trend = []
-        if period == 'weekly':
-            for i in range(6, -1, -1):
-                date = today - timedelta(days=i)
-                daily_purchases = Purchase.objects.filter(
-                    company=company,
-                    invoice_date=date
-                ).aggregate(total=Sum('grand_total'))
-                purchase_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_purchases['total'] or 0)
-                })
-        else:  # monthly
-            for i in range(29, -1, -1):
-                date = today - timedelta(days=i)
-                daily_purchases = Purchase.objects.filter(
-                    company=company,
-                    invoice_date=date
-                ).aggregate(total=Sum('grand_total'))
-                purchase_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_purchases['total'] or 0)
-                })
+        for date in date_list:
+            daily_purchases = Purchase.objects.filter(
+                company=company,
+                invoice_date=date
+            ).aggregate(total=Sum('grand_total'))
+            purchase_trend.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'amount': float(daily_purchases['total'] or 0)
+            })
         
         # Sales Due Trend (Last 7 days or 30 days)
         # Calculate outstanding amount (grand_total - paid_amount) for each day
@@ -182,97 +176,50 @@ class DashboardStatsAPIView(APIView):
                     'amount': float(daily_dues['total'] or 0)
                 })
         
-        # Purchase Due Trend (Last 7 days or 30 days)
+        # Purchase Due Trend - Use same date_list
         # Calculate outstanding amount (grand_total - paid_amount) for each day
         purchase_due_trend = []
-        if period == 'weekly':
-            for i in range(6, -1, -1):
-                date = today - timedelta(days=i)
-                daily_dues = Purchase.objects.filter(
-                    company=company,
-                    invoice_date=date
-                ).annotate(
-                    outstanding=F('grand_total') - F('paid_amount')
-                ).filter(
-                    outstanding__gt=0
-                ).aggregate(total=Sum('outstanding', output_field=DecimalField()))
-                purchase_due_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_dues['total'] or 0)
-                })
-        else:  # monthly
-            for i in range(29, -1, -1):
-                date = today - timedelta(days=i)
-                daily_dues = Purchase.objects.filter(
-                    company=company,
-                    invoice_date=date
-                ).annotate(
-                    outstanding=F('grand_total') - F('paid_amount')
-                ).filter(
-                    outstanding__gt=0
-                ).aggregate(total=Sum('outstanding', output_field=DecimalField()))
-                purchase_due_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_dues['total'] or 0)
-                })
+        for date in date_list:
+            daily_dues = Purchase.objects.filter(
+                company=company,
+                invoice_date=date
+            ).annotate(
+                outstanding=F('grand_total') - F('paid_amount')
+            ).filter(
+                outstanding__gt=0
+            ).aggregate(total=Sum('outstanding', output_field=DecimalField()))
+            purchase_due_trend.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'amount': float(daily_dues['total'] or 0)
+            })
         
-        # Customer Payment Trend - Weekly (Last 7 days) or Monthly (Last 30 days)
+        # Customer Payment Trend - Use same date_list
         customer_payment_trend = []
-        if period == 'weekly':
-            for i in range(6, -1, -1):
-                date = today - timedelta(days=i)
-                daily_payments = Payment.objects.filter(
-                    company=company,
-                    payment_type=PaymentType.RECEIVED,
-                    date=date,
-                    status=PaymentStatus.COMPLETED
-                ).aggregate(total=Sum('amount'))
-                customer_payment_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_payments['total'] or 0)
-                })
-        else:  # monthly
-            for i in range(29, -1, -1):
-                date = today - timedelta(days=i)
-                daily_payments = Payment.objects.filter(
-                    company=company,
-                    payment_type=PaymentType.RECEIVED,
-                    date=date,
-                    status=PaymentStatus.COMPLETED
-                ).aggregate(total=Sum('amount'))
-                customer_payment_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_payments['total'] or 0)
-                })
+        for date in date_list:
+            daily_payments = Payment.objects.filter(
+                company=company,
+                payment_type=PaymentType.RECEIVED,
+                date=date,
+                status=PaymentStatus.COMPLETED
+            ).aggregate(total=Sum('amount'))
+            customer_payment_trend.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'amount': float(daily_payments['total'] or 0)
+            })
         
-        # Supplier Payment Trend - Weekly (Last 7 days) or Monthly (Last 30 days)
+        # Supplier Payment Trend - Use same date_list
         supplier_payment_trend = []
-        if period == 'weekly':
-            for i in range(6, -1, -1):
-                date = today - timedelta(days=i)
-                daily_payments = Payment.objects.filter(
-                    company=company,
-                    payment_type=PaymentType.MADE,
-                    date=date,
-                    status=PaymentStatus.COMPLETED
-                ).aggregate(total=Sum('amount'))
-                supplier_payment_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_payments['total'] or 0)
-                })
-        else:  # monthly
-            for i in range(29, -1, -1):
-                date = today - timedelta(days=i)
-                daily_payments = Payment.objects.filter(
-                    company=company,
-                    payment_type=PaymentType.MADE,
-                    date=date,
-                    status=PaymentStatus.COMPLETED
-                ).aggregate(total=Sum('amount'))
-                supplier_payment_trend.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'amount': float(daily_payments['total'] or 0)
-                })
+        for date in date_list:
+            daily_payments = Payment.objects.filter(
+                company=company,
+                payment_type=PaymentType.MADE,
+                date=date,
+                status=PaymentStatus.COMPLETED
+            ).aggregate(total=Sum('amount'))
+            supplier_payment_trend.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'amount': float(daily_payments['total'] or 0)
+            })
         
         # Low Stock Items
         low_stock = Stock.objects.filter(
