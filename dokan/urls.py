@@ -1,4 +1,9 @@
 
+from core.dashboard_views import DashboardStatsAPIView
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 from django.urls import re_path, path, include
 from django.contrib import admin
 from django.urls import path, include
@@ -19,17 +24,9 @@ schema_view = get_schema_view(
 )
 
 
-
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
-from core.dashboard_views import DashboardStatsAPIView
-
-
 urlpatterns = [
     path('admin/', admin.site.urls),
-    
+
     # Main APIs
     path('api/purchases/', include('purchase.urls')),
     path('api/sales/', include('sale.urls')),
@@ -40,10 +37,11 @@ urlpatterns = [
     path('api/inventory/', include('inventory.urls')),
     path('api/accounting/', include('accounting.urls')),
     path('api/payments/', include('payment.urls')),
-    
+
     # Dashboard
-    path('api/dashboard/stats/', DashboardStatsAPIView.as_view(), name='dashboard-stats'),
-    
+    path('api/dashboard/stats/', DashboardStatsAPIView.as_view(),
+         name='dashboard-stats'),
+
     # Authentication
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

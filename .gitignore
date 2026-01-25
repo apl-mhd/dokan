@@ -41,6 +41,8 @@ poetry.lock
 # dotenv
 .env
 .env.*
+# Keep .env.example in version control
+!.env.example
 
 # migrations (optional)
 **/migrations/*.py
