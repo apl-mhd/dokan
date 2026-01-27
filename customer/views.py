@@ -26,20 +26,38 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """Auto-set company when creating customer"""
-        company = getattr(self.request, 'company', None)
-        if not company:
-            from rest_framework.exceptions import ValidationError
-            raise ValidationError(
-                {'company': 'Company context is required. Please ensure you are associated with a company.'})
-        customer = serializer.save(company=company, is_customer=True)
+        try:
+            company = getattr(self.request, 'company', None)
+            if not company:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError(
+                    {'company': 'Company context is required. Please ensure you are associated with a company.'})
+            customer = serializer.save(company=company, is_customer=True)
 
-        # Create opening balance ledger entry if opening_balance > 0
-        opening_balance = serializer.validated_data.get(
-            'opening_balance', 0) or customer.opening_balance
-        if opening_balance:
-            LedgerService.create_or_update_opening_balance_entry(
-                customer, company, opening_balance)
-            LedgerService.update_party_balance(customer, company)
+            # Create opening balance ledger entry if opening_balance > 0
+            opening_balance = serializer.validated_data.get(
+                'opening_balance', 0) or customer.opening_balance
+            if opening_balance:
+                LedgerService.create_or_update_opening_balance_entry(
+                    customer, company, opening_balance)
+                LedgerService.update_party_balance(customer, company)
+        except Exception as e:
+            # Handle IntegrityError for unique constraint violations
+            from django.db import IntegrityError
+            from rest_framework.exceptions import ValidationError as DRFValidationError
+            
+            # If it's already a ValidationError, let it bubble up
+            if isinstance(e, DRFValidationError):
+                raise
+            
+            # Convert IntegrityError to ValidationError
+            if isinstance(e, IntegrityError):
+                if 'phone' in str(e) or 'unique' in str(e).lower():
+                    raise DRFValidationError({
+                        'phone': 'This phone number is already registered. Phone numbers must be unique within your company.'
+                    })
+            
+            raise
 
     def list(self, request, *args, **kwargs):
         """Custom list response format with search, filters, pagination"""
@@ -103,22 +121,50 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """Custom create response format"""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        return Response({
-            "message": "Customer created successfully",
-            "data": serializer.data
-        }, status=status.HTTP_201_CREATED)
+        try:
+            serializer = self.get_serializer(data=request.data, context={'request': request})
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            return Response({
+                "message": "Customer created successfully",
+                "data": serializer.data
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            # Handle IntegrityError for unique constraint violations
+            from django.db import IntegrityError
+            if isinstance(e, IntegrityError) and 'phone' in str(e):
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({
+                    'phone': 'This phone number is already registered. Phone numbers must be unique within your company.'
+                })
+            raise
 
     def update(self, request, *args, **kwargs):
         """Custom update response format"""
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(
-            instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
+        try:
+            partial = kwargs.pop('partial', False)
+            instance = self.get_object()
+            serializer = self.get_serializer(
+                instance, data=request.data, partial=partial, context={'request': request})
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+        except Exception as e:
+            # Handle IntegrityError for unique constraint violations
+            from django.db import IntegrityError
+            from rest_framework.exceptions import ValidationError as DRFValidationError
+            
+            # If it's already a ValidationError, let it bubble up
+            if isinstance(e, DRFValidationError):
+                raise
+            
+            # Convert IntegrityError to ValidationError
+            if isinstance(e, IntegrityError):
+                if 'phone' in str(e) or 'unique' in str(e).lower():
+                    raise DRFValidationError({
+                        'phone': 'This phone number is already registered. Phone numbers must be unique within your company.'
+                    })
+            
+            raise
 
         # Refresh instance to get updated opening_balance
         instance.refresh_from_db()
