@@ -16,6 +16,7 @@ from warehouse.models import Warehouse
 from core.services.invoice_number import InvoiceNumberGenerator
 from core.models import DocumentType
 from accounting.services.ledger_service import LedgerService
+from payment.services.payment_fifo_service import PaymentFIFOService
 
 
 class SaleReturnService:
@@ -567,6 +568,10 @@ class SaleReturnService:
                 sale_return.completed_at = timezone.now()
                 sale_return.updated_by = user
                 sale_return.save(update_fields=['status', 'completed_at', 'updated_by', 'updated_at'])
+                
+                # Recalculate invoice payment status using FIFO formula
+                if sale_return.sale:
+                    PaymentFIFOService._update_invoice_payment_status(sale_return.sale, 'sale')
                 
                 return sale_return
                 

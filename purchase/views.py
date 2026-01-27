@@ -16,6 +16,7 @@ from decimal import Decimal
 from django.utils import timezone
 from django.db import transaction
 from payment.models import Payment, PaymentType, PaymentMethod, PaymentStatus as PayStatus
+from payment.services.payment_fifo_service import PaymentFIFOService
 from accounting.services.ledger_service import LedgerService
 
 
@@ -220,40 +221,34 @@ class PurchaseTakePaymentAPIView(APIView):
 
         try:
             with transaction.atomic():
-                ref = f"CASH-PURCHASE-{purchase.invoice_number or purchase.id}-{int(timezone.now().timestamp())}"
-                payment = Payment.objects.create(
+                # Apply payment using FIFO logic
+                # This will create payment records and update invoice status
+                payment_date = request.data.get('date') or timezone.now().date()
+                applied_payments = PaymentFIFOService.apply_payment_to_invoices(
+                    payment_amount=amount,
+                    party=purchase.supplier,
+                    invoice_type='purchase',
                     company=request.company,
-                    payment_type=PaymentType.MADE,
-                    customer=None,
-                    supplier=purchase.supplier,
-                    sale=None,
-                    purchase=purchase,
-                    payment_method=PaymentMethod.CASH,
-                    amount=amount,
-                    date=request.data.get('date') or timezone.now().date(),
-                    reference_number=ref,
-                    status=PayStatus.COMPLETED,
-                    notes="Cash payment from invoice list",
-                    created_by=user
+                    user=user,
+                    specific_invoice=purchase,
+                    payment_date=payment_date
                 )
-
-                LedgerService.create_payment_ledger_entry(
-                    payment, request.company, purchase.supplier, payment_type='made', source_object=purchase
-                )
-                LedgerService.update_party_balance(purchase.supplier, request.company)
-
-                from purchase.services.purchase_service import PurchaseService
-                purchase.paid_amount = (purchase.paid_amount or Decimal('0.00')) + amount
-                purchase.payment_status = PurchaseService._calculate_payment_status(
-                    purchase.paid_amount, purchase.grand_total
-                )
-                purchase.save(update_fields=['paid_amount', 'payment_status'])
+                
+                # Reload purchase to get updated status
+                purchase.refresh_from_db()
 
                 serializer = PurchaseSerializer(purchase)
                 return Response({
                     "message": "Payment taken successfully",
                     "data": serializer.data,
-                    "payment_id": payment.id
+                    "applied_to_invoices": [
+                        {
+                            "invoice_id": inv.id,
+                            "invoice_number": inv.invoice_number or str(inv.id),
+                            "applied_amount": float(applied_amount)
+                        }
+                        for inv, applied_amount in applied_payments
+                    ]
                 }, status=status.HTTP_200_OK)
 
         except ValidationError as e:

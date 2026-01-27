@@ -1,17 +1,19 @@
 from django.shortcuts import get_object_or_404
 from django.db.models import Q, Prefetch
 from django.db import transaction as db_transaction
+from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 
-from payment.models import Payment, PaymentType
+from payment.models import Payment, PaymentType, PaymentMethod, PaymentStatus as PayStatus
 from payment.serializers import (
     PaymentSerializer,
     PaymentInputSerializer,
     PaymentUpdateSerializer
 )
+from payment.services.payment_fifo_service import PaymentFIFOService
 from customer.models import Customer
 from supplier.models import Supplier
 from accounting.services.ledger_service import LedgerService
@@ -182,7 +184,62 @@ class PaymentAPIView(APIView):
                         id=data['purchase']
                     )
 
-                # Create payment
+                payment_status = data.get('status', 'completed')
+                payment_method = data.get('payment_method', PaymentMethod.CASH)
+                payment_amount = data['amount']
+                
+                # Apply FIFO for cash payments that are completed
+                if (payment_method == PaymentMethod.CASH and 
+                    payment_status == PayStatus.COMPLETED and 
+                    payment_amount > 0):
+                    
+                    # Determine invoice type
+                    invoice_type = 'sale' if payment_type == PaymentType.RECEIVED else 'purchase'
+                    specific_invoice = sale if invoice_type == 'sale' else purchase
+                    
+                    # Apply payment using FIFO
+                    payment_date = data.get('date') or timezone.now().date()
+                    applied_payments = PaymentFIFOService.apply_payment_to_invoices(
+                        payment_amount=payment_amount,
+                        party=party,
+                        invoice_type=invoice_type,
+                        company=request.company,
+                        user=user,
+                        specific_invoice=specific_invoice,
+                        payment_date=payment_date
+                    )
+                    
+                    # Return response with FIFO information
+                    # Note: Multiple payment records were created by FIFO service
+                    # Query for payments created in this transaction (by date and party)
+                    created_payments = Payment.objects.filter(
+                        company=request.company,
+                        payment_type=payment_type,
+                        customer=customer if payment_type == PaymentType.RECEIVED else None,
+                        supplier=supplier if payment_type == PaymentType.MADE else None,
+                        payment_method=payment_method,
+                        date=payment_date,
+                        created_by=user
+                    ).order_by('-created_at')[:len(applied_payments)]
+                    
+                    # Return the first payment for backward compatibility
+                    first_payment = created_payments.first() if created_payments.exists() else None
+                    serializer_output = PaymentSerializer(first_payment) if first_payment else None
+                    
+                    return Response({
+                        "message": "Payment created successfully (FIFO applied)",
+                        "data": serializer_output.data if serializer_output else None,
+                        "applied_to_invoices": [
+                            {
+                                "invoice_id": inv.id,
+                                "invoice_number": inv.invoice_number or str(inv.id),
+                                "applied_amount": float(applied_amount)
+                            }
+                            for inv, applied_amount in applied_payments
+                        ]
+                    }, status=status.HTTP_201_CREATED)
+                
+                # For non-cash or non-completed payments, create payment normally
                 payment = Payment.objects.create(
                     company=request.company,
                     payment_type=payment_type,
@@ -190,15 +247,15 @@ class PaymentAPIView(APIView):
                     supplier=supplier,
                     sale=sale,
                     purchase=purchase,
-                    payment_method=data['payment_method'],
-                    amount=data['amount'],
+                    payment_method=payment_method,
+                    amount=payment_amount,
                     date=data.get('date'),
                     reference_number=data.get('reference_number', ''),
                     account_number=data.get('account_number', ''),
                     account_holder_name=data.get('account_holder_name', ''),
                     bank_name=data.get('bank_name', ''),
                     branch_name=data.get('branch_name', ''),
-                    status=data.get('status', 'completed'),
+                    status=payment_status,
                     notes=data.get('notes', ''),
                     created_by=user
                 )
@@ -497,6 +554,54 @@ class CustomerPaymentAPIView(APIView):
                         id=validated_data['sale']
                     )
 
+                payment_status = validated_data.get('status', 'completed')
+                payment_method = validated_data.get('payment_method', PaymentMethod.CASH)
+                payment_amount = validated_data['amount']
+                payment_date = validated_data.get('date') or timezone.now().date()
+                
+                # Apply FIFO for cash payments that are completed
+                if (payment_method == PaymentMethod.CASH and 
+                    payment_status == PayStatus.COMPLETED and 
+                    payment_amount > 0):
+                    
+                    # Apply payment using FIFO
+                    applied_payments = PaymentFIFOService.apply_payment_to_invoices(
+                        payment_amount=payment_amount,
+                        party=customer,
+                        invoice_type='sale',
+                        company=request.company,
+                        user=user,
+                        specific_invoice=sale,
+                        payment_date=payment_date
+                    )
+                    
+                    # Return response with FIFO information
+                    created_payments = Payment.objects.filter(
+                        company=request.company,
+                        payment_type=PaymentType.RECEIVED,
+                        customer=customer,
+                        payment_method=payment_method,
+                        date=payment_date,
+                        created_by=user
+                    ).order_by('-created_at')[:len(applied_payments)]
+                    
+                    first_payment = created_payments.first() if created_payments.exists() else None
+                    serializer_output = PaymentSerializer(first_payment) if first_payment else None
+                    
+                    return Response({
+                        "message": "Customer payment created successfully (FIFO applied)",
+                        "data": serializer_output.data if serializer_output else None,
+                        "applied_to_invoices": [
+                            {
+                                "invoice_id": inv.id,
+                                "invoice_number": inv.invoice_number or str(inv.id),
+                                "applied_amount": float(applied_amount)
+                            }
+                            for inv, applied_amount in applied_payments
+                        ]
+                    }, status=status.HTTP_201_CREATED)
+
+                # For non-cash or non-completed payments, create payment normally
                 payment = Payment.objects.create(
                     company=request.company,
                     payment_type=PaymentType.RECEIVED,
@@ -504,8 +609,8 @@ class CustomerPaymentAPIView(APIView):
                     supplier=None,
                     sale=sale,
                     purchase=None,
-                    payment_method=validated_data['payment_method'],
-                    amount=validated_data['amount'],
+                    payment_method=payment_method,
+                    amount=payment_amount,
                     date=validated_data.get('date'),
                     reference_number=validated_data.get(
                         'reference_number', ''),
@@ -514,7 +619,7 @@ class CustomerPaymentAPIView(APIView):
                         'account_holder_name', ''),
                     bank_name=validated_data.get('bank_name', ''),
                     branch_name=validated_data.get('branch_name', ''),
-                    status=validated_data.get('status', 'completed'),
+                    status=payment_status,
                     notes=validated_data.get('notes', ''),
                     created_by=user
                 )
@@ -724,6 +829,54 @@ class SupplierPaymentAPIView(APIView):
                         id=validated_data['purchase']
                     )
 
+                payment_status = validated_data.get('status', 'completed')
+                payment_method = validated_data.get('payment_method', PaymentMethod.CASH)
+                payment_amount = validated_data['amount']
+                payment_date = validated_data.get('date') or timezone.now().date()
+                
+                # Apply FIFO for cash payments that are completed
+                if (payment_method == PaymentMethod.CASH and 
+                    payment_status == PayStatus.COMPLETED and 
+                    payment_amount > 0):
+                    
+                    # Apply payment using FIFO
+                    applied_payments = PaymentFIFOService.apply_payment_to_invoices(
+                        payment_amount=payment_amount,
+                        party=supplier,
+                        invoice_type='purchase',
+                        company=request.company,
+                        user=user,
+                        specific_invoice=purchase,
+                        payment_date=payment_date
+                    )
+                    
+                    # Return response with FIFO information
+                    created_payments = Payment.objects.filter(
+                        company=request.company,
+                        payment_type=PaymentType.MADE,
+                        supplier=supplier,
+                        payment_method=payment_method,
+                        date=payment_date,
+                        created_by=user
+                    ).order_by('-created_at')[:len(applied_payments)]
+                    
+                    first_payment = created_payments.first() if created_payments.exists() else None
+                    serializer_output = PaymentSerializer(first_payment) if first_payment else None
+                    
+                    return Response({
+                        "message": "Supplier payment created successfully (FIFO applied)",
+                        "data": serializer_output.data if serializer_output else None,
+                        "applied_to_invoices": [
+                            {
+                                "invoice_id": inv.id,
+                                "invoice_number": inv.invoice_number or str(inv.id),
+                                "applied_amount": float(applied_amount)
+                            }
+                            for inv, applied_amount in applied_payments
+                        ]
+                    }, status=status.HTTP_201_CREATED)
+
+                # For non-cash or non-completed payments, create payment normally
                 payment = Payment.objects.create(
                     company=request.company,
                     payment_type=PaymentType.MADE,
@@ -731,8 +884,8 @@ class SupplierPaymentAPIView(APIView):
                     supplier=supplier,
                     sale=None,
                     purchase=purchase,
-                    payment_method=validated_data['payment_method'],
-                    amount=validated_data['amount'],
+                    payment_method=payment_method,
+                    amount=payment_amount,
                     date=validated_data.get('date'),
                     reference_number=validated_data.get(
                         'reference_number', ''),
@@ -741,7 +894,7 @@ class SupplierPaymentAPIView(APIView):
                         'account_holder_name', ''),
                     bank_name=validated_data.get('bank_name', ''),
                     branch_name=validated_data.get('branch_name', ''),
-                    status=validated_data.get('status', 'completed'),
+                    status=payment_status,
                     notes=validated_data.get('notes', ''),
                     created_by=user
                 )

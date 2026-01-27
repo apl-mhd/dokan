@@ -16,6 +16,7 @@ from warehouse.models import Warehouse
 from core.services.invoice_number import InvoiceNumberGenerator
 from core.models import DocumentType
 from accounting.services.ledger_service import LedgerService
+from payment.services.payment_fifo_service import PaymentFIFOService
 
 
 class PurchaseReturnService:
@@ -547,6 +548,10 @@ class PurchaseReturnService:
 
         # Create ledger entries
         PurchaseReturnService._apply_ledger_entries(purchase_return, company)
+        
+        # Recalculate invoice payment status using FIFO formula
+        if purchase_return.purchase:
+            PaymentFIFOService._update_invoice_payment_status(purchase_return.purchase, 'purchase')
 
         return purchase_return
 

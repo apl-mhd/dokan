@@ -17,6 +17,7 @@ from core.services.invoice_number import InvoiceNumberGenerator
 from core.models import DocumentType
 from accounting.services.ledger_service import LedgerService
 from payment.models import Payment, PaymentType, PaymentMethod, PaymentStatus as PayStatus
+from payment.services.payment_fifo_service import PaymentFIFOService
 
 
 class PurchaseService:
@@ -425,12 +426,11 @@ class PurchaseService:
                 paid_amount = Decimal(
                     str(validated_data.get('paid_amount', 0.00)))
                 purchase.paid_amount = paid_amount
-                # Always auto-calculate payment status (never trust client-provided value)
-                purchase.payment_status = PurchaseService._calculate_payment_status(
-                    paid_amount, purchase.grand_total)
-
+                # Save first to ensure purchase exists for FIFO calculation
                 purchase.save(update_fields=[
-                              "sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+                              "sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount"])
+                # Always auto-calculate payment status using FIFO formula
+                PaymentFIFOService._update_invoice_payment_status(purchase, 'purchase')
 
                 # Apply ledger entries only if new status is completed
                 if should_apply_new:
@@ -531,12 +531,11 @@ class PurchaseService:
                 paid_amount = Decimal(
                     str(validated_data.get('paid_amount', 0.00)))
                 purchase.paid_amount = paid_amount
-                # Always auto-calculate payment status (never trust client-provided value)
-                purchase.payment_status = PurchaseService._calculate_payment_status(
-                    paid_amount, purchase.grand_total)
-
+                # Save first to ensure purchase exists for FIFO calculation
                 purchase.save(update_fields=[
-                              "sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount", "payment_status"])
+                              "sub_total", "tax", "discount", "delivery_charge", "grand_total", "paid_amount"])
+                # Always auto-calculate payment status using FIFO formula
+                PaymentFIFOService._update_invoice_payment_status(purchase, 'purchase')
 
                 # Create accounting ledger entries only if status is completed
                 if purchase_status == PurchaseStatus.COMPLETED:
