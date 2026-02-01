@@ -52,6 +52,11 @@ class Unit(models.Model):
         null=True,
         blank=True
     )
+    is_active = models.BooleanField(default=True)
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Default unit for this category (only one per unit_category)"
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -82,6 +87,17 @@ class Unit(models.Model):
                 raise ValidationError({
                     'is_base_unit': f'Category already has a base unit: {existing_base.name}'
                 })
+
+            # Only one default unit per unit_category
+            if self.is_default:
+                existing_default = Unit.objects.filter(
+                    unit_category=self.unit_category,
+                    is_default=True
+                ).exclude(pk=self.pk).first()
+                if existing_default:
+                    raise ValidationError({
+                        'is_default': f'Category already has a default unit: {existing_default.name}'
+                    })
 
     def convert_to_base_unit(self, quantity):
         """

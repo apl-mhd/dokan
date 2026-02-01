@@ -217,7 +217,8 @@ class ProductUnitListAPIView(APIView):
                     "id": unit.id,
                     "name": unit.name,
                     "conversion_factor": str(unit.conversion_factor),
-                    "is_base_unit": unit.is_base_unit
+                    "is_base_unit": unit.is_base_unit,
+                    "is_default": unit.is_default
                 }
                 for unit in units
             ]

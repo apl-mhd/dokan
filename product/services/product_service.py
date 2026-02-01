@@ -203,7 +203,7 @@ class ProductService:
 
         return Unit.objects.filter(
             unit_category=product.base_unit.unit_category
-        ).order_by('is_base_unit', 'name')
+        ).order_by('-is_default', 'is_base_unit', 'name')
 
     @staticmethod
     def check_stock_availability(product_id, unit_id, quantity, warehouse_id):
@@ -275,6 +275,8 @@ class UnitService:
                     str(data.get('conversion_factor', 1.0))),
                 is_base_unit=data.get('is_base_unit', False),
                 unit_category=unit_category,
+                is_active=data.get('is_active', True),
+                is_default=data.get('is_default', False),
             )
             unit.full_clean()  # Run validation
             return unit
@@ -312,6 +314,10 @@ class UnitService:
                         str(data.get('conversion_factor')))
                 if 'is_base_unit' in data:
                     unit.is_base_unit = data.get('is_base_unit')
+                if 'is_active' in data:
+                    unit.is_active = data.get('is_active')
+                if 'is_default' in data:
+                    unit.is_default = data.get('is_default')
 
                 unit.full_clean()  # Run validation
                 unit.save()
