@@ -90,6 +90,8 @@ class ProductAPIView(APIView):
                         "conversion_factor": str(product.base_unit.conversion_factor),
                     } if product.base_unit else None,
                     "base_unit_name": product.base_unit.name if product.base_unit else None,
+                    "purchase_price": str(product.purchase_price) if product.purchase_price is not None else "0",
+                    "selling_price": str(product.selling_price) if product.selling_price is not None else "0",
                     "units": unit_list,
                     "total_stock": str(total_stock),
                 }

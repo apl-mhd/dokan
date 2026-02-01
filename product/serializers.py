@@ -50,6 +50,10 @@ class ProductCreateInputSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     category = serializers.IntegerField(required=True)
     base_unit = serializers.IntegerField(required=False, allow_null=True)
+    purchase_price = serializers.DecimalField(
+        max_digits=12, decimal_places=4, required=False, default=0)
+    selling_price = serializers.DecimalField(
+        max_digits=12, decimal_places=4, required=False, default=0)
 
     def validate_name(self, value):
         if not value or not value.strip():
@@ -63,6 +67,10 @@ class ProductUpdateInputSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     category = serializers.IntegerField(required=False)
     base_unit = serializers.IntegerField(required=False, allow_null=True)
+    purchase_price = serializers.DecimalField(
+        max_digits=12, decimal_places=4, required=False)
+    selling_price = serializers.DecimalField(
+        max_digits=12, decimal_places=4, required=False)
 
 
 class UnitCreateInputSerializer(serializers.Serializer):

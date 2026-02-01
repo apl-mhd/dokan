@@ -48,6 +48,8 @@ class ProductService:
                 category=category,
                 base_unit=base_unit,
                 company=company or category.company,  # Use category's company as fallback
+                purchase_price=data.get('purchase_price', 0),
+                selling_price=data.get('selling_price', 0),
             )
             product.full_clean()  # Run validation
             return product
@@ -85,6 +87,7 @@ class ProductService:
                     product.category = category
 
                 if 'base_unit' in data:
+                    # Allow base_unit change even if product has purchase/sale history (no restriction).
                     base_unit_id = data.get('base_unit')
                     if base_unit_id:
                         base_unit = get_object_or_404(Unit, id=base_unit_id)
@@ -105,6 +108,11 @@ class ProductService:
                     product.name = data.get('name')
                 if 'description' in data:
                     product.description = data.get('description', '')
+
+                if 'purchase_price' in data:
+                    product.purchase_price = data.get('purchase_price')
+                if 'selling_price' in data:
+                    product.selling_price = data.get('selling_price')
 
                 product.full_clean()  # Run validation
                 product.save()
