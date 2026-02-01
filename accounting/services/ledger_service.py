@@ -448,8 +448,10 @@ class LedgerService:
         if hasattr(adj_date, 'date'):
             adj_date = adj_date.date()
 
-        party_type = 'Supplier' if getattr(party, 'is_supplier', False) else 'Customer'
-        desc = description.strip() if description else f"Balance Adjustment - {party_type} {party.name}"
+        party_type = 'Supplier' if getattr(
+            party, 'is_supplier', False) else 'Customer'
+        desc = description.strip(
+        ) if description else f"Balance Adjustment - {party_type} {party.name}"
 
         import time
         txn_id = f"ADJ-{party.id}-{adj_date.strftime('%Y%m%d')}-{int(time.time() * 1000)}"

@@ -31,7 +31,8 @@ class SaleService:
         """
         ref = f"{SaleService.AUTO_PAYMENT_REFERENCE_PREFIX}{sale.id}"
 
-        qs = Payment.objects.filter(company=company, sale=sale, reference_number=ref)
+        qs = Payment.objects.filter(
+            company=company, sale=sale, reference_number=ref)
         existing = qs.order_by("-id").first()
 
         # If paid_amount is zero/negative, remove any auto payment
@@ -167,7 +168,8 @@ class SaleService:
         content_type = None
         object_id = None
         if source_object is not None:
-            content_type = ContentType.objects.get_for_model(source_object.__class__)
+            content_type = ContentType.objects.get_for_model(
+                source_object.__class__)
             object_id = source_object.id
 
         stock_transaction = StockTransaction.objects.create(
@@ -234,7 +236,6 @@ class SaleService:
         if sale.grand_total > 0:
             # Create sale ledger entry (Debit: Customer Receivable)
             LedgerService.create_sale_ledger_entry(sale, company)
-
             # Create payment ledger entry if paid_amount > 0 (Credit: Customer Receivable)
             if sale.paid_amount > 0:
                 from types import SimpleNamespace
@@ -442,7 +443,8 @@ class SaleService:
                     LedgerService.update_party_balance(sale.customer, company)
 
                 # Sync Payment table row from paid_amount (all statuses)
-                SaleService._sync_auto_payment_from_paid_amount(sale, user, company)
+                SaleService._sync_auto_payment_from_paid_amount(
+                    sale, user, company)
 
                 return sale
 
@@ -508,7 +510,6 @@ class SaleService:
                     is_update=False,
                     should_update_stock=should_update_stock
                 )
-
                 SaleItem.objects.bulk_create(sale_items)
 
                 # Calculate totals
@@ -519,7 +520,6 @@ class SaleService:
                 sale.delivery_charge = Decimal(
                     str(validated_data.get('delivery_charge', 0.00)))
                 sale.grand_total = sub_total + sale.tax + sale.delivery_charge - sale.discount
-
                 # Handle payment fields
                 paid_amount = Decimal(
                     str(validated_data.get('paid_amount', 0.00)))
@@ -533,9 +533,9 @@ class SaleService:
                 # Create accounting ledger entries only if status is delivered
                 if sale_status == SaleStatus.DELIVERED:
                     SaleService._apply_ledger_entries(sale, company)
-
                 # Sync Payment table row from paid_amount (all statuses)
-                SaleService._sync_auto_payment_from_paid_amount(sale, user, company)
+                SaleService._sync_auto_payment_from_paid_amount(
+                    sale, user, company)
 
                 return sale
 
