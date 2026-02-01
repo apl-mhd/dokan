@@ -416,6 +416,75 @@ class LedgerService:
             )
 
     @staticmethod
+    def create_balance_adjustment_entry(party, company, amount, description='', adjustment_date=None):
+        """
+        Create a ledger entry for balance adjustment (manual adjustment by user).
+
+        - amount > 0: Increase balance (debit entry)
+          - Supplier: we owe more to supplier
+          - Customer: customer owes us more
+        - amount < 0: Decrease balance (credit entry)
+          - Supplier: we owe less to supplier
+          - Customer: customer owes us less
+
+        Args:
+            party: Party instance (Supplier or Customer)
+            company: Company instance
+            amount: Decimal - positive to increase, negative to decrease
+            description: Optional description for the adjustment
+            adjustment_date: Optional date for the entry (default: today)
+
+        Returns:
+            Ledger instance
+        """
+        from datetime import date
+        from accounting.models import TransactionType
+
+        amount = Decimal(str(amount))
+        if amount == 0:
+            raise ValueError("Adjustment amount cannot be zero")
+
+        adj_date = adjustment_date or date.today()
+        if hasattr(adj_date, 'date'):
+            adj_date = adj_date.date()
+
+        party_type = 'Supplier' if getattr(party, 'is_supplier', False) else 'Customer'
+        desc = description.strip() if description else f"Balance Adjustment - {party_type} {party.name}"
+
+        import time
+        txn_id = f"ADJ-{party.id}-{adj_date.strftime('%Y%m%d')}-{int(time.time() * 1000)}"
+
+        if amount > 0:
+            ledger_entry = Ledger.objects.create(
+                company=company,
+                party=party,
+                content_type=None,
+                object_id=None,
+                date=adj_date,
+                txn_id=txn_id,
+                txn_type=TransactionType.ADJUSTMENT,
+                description=desc,
+                debit=amount,
+                credit=Decimal('0.00')
+            )
+        else:
+            ledger_entry = Ledger.objects.create(
+                company=company,
+                party=party,
+                content_type=None,
+                object_id=None,
+                date=adj_date,
+                txn_id=txn_id,
+                txn_type=TransactionType.ADJUSTMENT,
+                description=desc,
+                debit=Decimal('0.00'),
+                credit=abs(amount)
+            )
+
+        LedgerService.update_party_balance(party, company)
+        return ledger_entry
+
+    @staticmethod
     def update_party_balance(party, company):
         """
         Calculate and update party balance from ledger entries.

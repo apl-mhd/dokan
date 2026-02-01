@@ -1,6 +1,9 @@
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
+from decimal import Decimal
+from django.utils.dateparse import parse_date
 from .models import Supplier
 from .serializer import SupplierSerializer
 from accounting.services.ledger_service import LedgerService
@@ -192,3 +195,59 @@ class SupplierViewSet(viewsets.ModelViewSet):
         return Response({
             "message": "Supplier deleted successfully"
         }, status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='adjust-balance')
+    def adjust_balance(self, request, pk=None):
+        """Adjust supplier balance. Creates ledger entry and updates party balance."""
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        supplier = self.get_object()
+        amount = request.data.get('amount')
+        description = request.data.get('description', '').strip()
+        adjustment_date = request.data.get('date')
+
+        if amount is None:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Amount is required"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            amount = Decimal(str(amount))
+        except (TypeError, ValueError):
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Invalid amount"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount == 0:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Amount cannot be zero"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        adj_date = parse_date(adjustment_date) if adjustment_date else None
+
+        try:
+            LedgerService.create_balance_adjustment_entry(
+                party=supplier,
+                company=request.company,
+                amount=amount,
+                description=description or f"Balance Adjustment - Supplier {supplier.name}",
+                adjustment_date=adj_date
+            )
+        except ValueError as e:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": [str(e)]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        supplier.refresh_from_db()
+        serializer = self.get_serializer(supplier)
+        return Response({
+            "message": "Balance adjusted successfully",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
