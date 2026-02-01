@@ -155,18 +155,20 @@ class PaymentAPIView(APIView):
                 supplier = None
                 party = None
 
-                if payment_type == PaymentType.RECEIVED:
-                    customer = get_object_or_404(
-                        Customer.objects.filter(company=request.company),
-                        id=data['customer']
-                    )
-                    party = customer
-                else:  # PaymentType.MADE
-                    supplier = get_object_or_404(
-                        Supplier.objects.filter(company=request.company),
-                        id=data['supplier']
-                    )
-                    party = supplier
+                if payment_type in (PaymentType.RECEIVED, PaymentType.CUSTOMER_REFUND, PaymentType.WITHDRAW):
+                    if data.get('customer'):
+                        customer = get_object_or_404(
+                            Customer.objects.filter(company=request.company),
+                            id=data['customer']
+                        )
+                        party = customer
+                elif payment_type in (PaymentType.MADE, PaymentType.SUPPLIER_REFUND):
+                    if data.get('supplier'):
+                        supplier = get_object_or_404(
+                            Supplier.objects.filter(company=request.company),
+                            id=data['supplier']
+                        )
+                        party = supplier
 
                 # Get sale/purchase if provided
                 sale = None
@@ -188,8 +190,10 @@ class PaymentAPIView(APIView):
                 payment_method = data.get('payment_method', PaymentMethod.CASH)
                 payment_amount = data['amount']
                 
-                # Apply FIFO for cash payments that are completed
-                if (payment_method == PaymentMethod.CASH and 
+                # Apply FIFO for cash payments that are completed (only RECEIVED/MADE, not refunds)
+                if (payment_type in (PaymentType.RECEIVED, PaymentType.MADE) and
+                    party is not None and
+                    payment_method == PaymentMethod.CASH and 
                     payment_status == PayStatus.COMPLETED and 
                     payment_amount > 0):
                     
@@ -260,13 +264,18 @@ class PaymentAPIView(APIView):
                     created_by=user
                 )
 
-                # Create ledger entry only if payment status is completed
-                if payment.status == 'completed' and payment.amount > 0:
-                    payment_type_str = 'received' if payment_type == PaymentType.RECEIVED else 'made'
+                # Create ledger entry only if payment status is completed (non-zero amount)
+                if payment.status == 'completed' and payment.amount != 0 and party is not None:
+                    payment_type_str = {
+                        PaymentType.RECEIVED: 'received',
+                        PaymentType.MADE: 'made',
+                        PaymentType.CUSTOMER_REFUND: 'customer_refund',
+                        PaymentType.SUPPLIER_REFUND: 'supplier_refund',
+                        PaymentType.WITHDRAW: 'customer_refund',  # Same ledger: debit (reduce advance)
+                    }.get(payment_type, 'received')
                     LedgerService.create_payment_ledger_entry(
                         payment, request.company, party, payment_type=payment_type_str
                     )
-                    # Update party balance
                     LedgerService.update_party_balance(party, request.company)
 
                 serializer_output = PaymentSerializer(payment)
@@ -353,17 +362,23 @@ class PaymentAPIView(APIView):
                     LedgerService.delete_ledger_entries_for_object(
                         payment, request.company)
 
-                    # Create new ledger entry if status is completed
-                    if new_status == 'completed' and payment.amount > 0:
-                        party = payment.get_party()
-                        payment_type_str = 'received' if payment.payment_type == PaymentType.RECEIVED else 'made'
+                    # Create new ledger entry if status is completed (non-zero amount)
+                    party = payment.get_party()
+                    if new_status == 'completed' and payment.amount != 0 and party is not None:
+                        payment_type_str = {
+                            PaymentType.RECEIVED: 'received',
+                            PaymentType.MADE: 'made',
+                            PaymentType.CUSTOMER_REFUND: 'customer_refund',
+                            PaymentType.SUPPLIER_REFUND: 'supplier_refund',
+                            PaymentType.WITHDRAW: 'customer_refund',  # Same ledger: debit (reduce advance)
+                        }.get(payment.payment_type, 'received')
                         LedgerService.create_payment_ledger_entry(
                             payment, request.company, party, payment_type=payment_type_str
                         )
 
-                    # Update party balance
-                    party = payment.get_party()
-                    LedgerService.update_party_balance(party, request.company)
+                    # Update party balance (if payment has a party)
+                    if party is not None:
+                        LedgerService.update_party_balance(party, request.company)
 
                 serializer_output = PaymentSerializer(payment)
                 return Response({
@@ -410,8 +425,9 @@ class PaymentAPIView(APIView):
                 # Delete payment
                 payment.delete()
 
-                # Update party balance
-                LedgerService.update_party_balance(party, request.company)
+                # Update party balance (if payment had a party)
+                if party is not None:
+                    LedgerService.update_party_balance(party, request.company)
 
                 return Response({
                     "message": "Payment deleted successfully"
@@ -624,7 +640,7 @@ class CustomerPaymentAPIView(APIView):
                     created_by=user
                 )
 
-                if payment.status == 'completed' and payment.amount > 0:
+                if payment.status == 'completed' and payment.amount != 0:
                     LedgerService.create_payment_ledger_entry(
                         payment, request.company, customer, payment_type='received'
                     )
@@ -899,7 +915,7 @@ class SupplierPaymentAPIView(APIView):
                     created_by=user
                 )
 
-                if payment.status == 'completed' and payment.amount > 0:
+                if payment.status == 'completed' and payment.amount != 0:
                     LedgerService.create_payment_ledger_entry(
                         payment, request.company, supplier, payment_type='made'
                     )

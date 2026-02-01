@@ -231,37 +231,104 @@ class LedgerService:
             # Already a date object or string
             pass
 
-        if payment_type == 'received':
-            # Payment received from customer
-            # Single entry: Customer Receivable (Credit - reduces what customer owes us)
+        amount = payment.amount
+        abs_amount = abs(amount)
+        is_advance_withdrawal = amount < 0
+
+        if payment_type == 'customer_refund':
+            # Refund to customer: we return advance (Debit - reduces advance liability)
+            # Amount is always positive for refund type
+            refund_amount = abs_amount if amount < 0 else amount
             credit_entry = Ledger.objects.create(
                 company=company,
                 party=party,
                 content_type=content_type,
                 object_id=object_id,
                 date=payment_date,
-                txn_id=payment.reference_number,
+                txn_id=payment.reference_number or f"REF-{object_id}" if object_id else "REF",
                 txn_type=TransactionType.PAYMENT_RECEIVED,
                 description=description,
-                debit=Decimal('0.00'),
-                credit=payment.amount
+                debit=refund_amount,
+                credit=Decimal('0.00')
             )
-            debit_entry = credit_entry  # For backward compatibility
-        else:
-            # Payment made to supplier
-            # Single entry: Supplier Payable (Credit - reduces what we owe)
+            debit_entry = credit_entry
+        elif payment_type == 'supplier_refund':
+            # Refund from supplier: we receive back advance (Credit - reduces advance asset)
+            # Amount is always positive for refund type
+            refund_amount = abs_amount if amount < 0 else amount
             credit_entry = Ledger.objects.create(
                 company=company,
                 party=party,
                 content_type=content_type,
                 object_id=object_id,
                 date=payment_date,
-                txn_id=payment.reference_number,
+                txn_id=payment.reference_number or f"REF-{object_id}" if object_id else "REF",
                 txn_type=TransactionType.PAYMENT_MADE,
                 description=description,
                 debit=Decimal('0.00'),
-                credit=payment.amount
+                credit=refund_amount
             )
+            debit_entry = credit_entry
+        elif payment_type == 'received':
+            # Positive: Payment received from customer (Credit - reduces what customer owes us)
+            # Negative: Advance withdrawal - we return money to customer (Debit - reduces advance liability)
+            if is_advance_withdrawal:
+                credit_entry = Ledger.objects.create(
+                    company=company,
+                    party=party,
+                    content_type=content_type,
+                    object_id=object_id,
+                    date=payment_date,
+                    txn_id=payment.reference_number,
+                    txn_type=TransactionType.PAYMENT_RECEIVED,
+                    description=description,
+                    debit=abs_amount,
+                    credit=Decimal('0.00')
+                )
+            else:
+                credit_entry = Ledger.objects.create(
+                    company=company,
+                    party=party,
+                    content_type=content_type,
+                    object_id=object_id,
+                    date=payment_date,
+                    txn_id=payment.reference_number,
+                    txn_type=TransactionType.PAYMENT_RECEIVED,
+                    description=description,
+                    debit=Decimal('0.00'),
+                    credit=amount
+                )
+            debit_entry = credit_entry  # For backward compatibility
+        else:
+            # payment_type == 'made'
+            # Positive: Payment made to supplier (Credit - reduces what we owe)
+            # Negative: Advance withdrawal - supplier returns money to us (Debit - reduces advance asset)
+            if is_advance_withdrawal:
+                credit_entry = Ledger.objects.create(
+                    company=company,
+                    party=party,
+                    content_type=content_type,
+                    object_id=object_id,
+                    date=payment_date,
+                    txn_id=payment.reference_number,
+                    txn_type=TransactionType.PAYMENT_MADE,
+                    description=description,
+                    debit=abs_amount,
+                    credit=Decimal('0.00')
+                )
+            else:
+                credit_entry = Ledger.objects.create(
+                    company=company,
+                    party=party,
+                    content_type=content_type,
+                    object_id=object_id,
+                    date=payment_date,
+                    txn_id=payment.reference_number,
+                    txn_type=TransactionType.PAYMENT_MADE,
+                    description=description,
+                    debit=Decimal('0.00'),
+                    credit=amount
+                )
             debit_entry = credit_entry  # For backward compatibility
 
         return debit_entry, credit_entry

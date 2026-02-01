@@ -63,14 +63,14 @@ class PaymentInputSerializer(serializers.Serializer):
     )
 
     def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Amount must be greater than zero")
+        if value == 0:
+            raise serializers.ValidationError("Amount cannot be zero")
         return value
 
     def validate(self, data):
         """Validate party based on payment type"""
         payment_type = data.get('payment_type')
-        
+
         if payment_type == PaymentType.RECEIVED:
             if not data.get('customer'):
                 raise serializers.ValidationError({
@@ -89,7 +89,46 @@ class PaymentInputSerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     'customer': 'Customer should not be set for made payments'
                 })
-        
+        elif payment_type == PaymentType.CUSTOMER_REFUND:
+            if not data.get('customer'):
+                raise serializers.ValidationError({
+                    'customer': 'Customer is required for customer refund'
+                })
+            if data.get('supplier'):
+                raise serializers.ValidationError({
+                    'supplier': 'Supplier should not be set for customer refund'
+                })
+            if data.get('amount', 0) <= 0:
+                raise serializers.ValidationError({
+                    'amount': 'Refund amount must be positive'
+                })
+        elif payment_type == PaymentType.SUPPLIER_REFUND:
+            if not data.get('supplier'):
+                raise serializers.ValidationError({
+                    'supplier': 'Supplier is required for supplier refund'
+                })
+            if data.get('customer'):
+                raise serializers.ValidationError({
+                    'customer': 'Customer should not be set for supplier refund'
+                })
+            if data.get('amount', 0) <= 0:
+                raise serializers.ValidationError({
+                    'amount': 'Refund amount must be positive'
+                })
+        elif payment_type == PaymentType.WITHDRAW:
+            if not data.get('customer'):
+                raise serializers.ValidationError({
+                    'customer': 'Customer (owner) is required for owner withdraw'
+                })
+            if data.get('supplier'):
+                raise serializers.ValidationError({
+                    'supplier': 'Supplier should not be set for owner withdraw'
+                })
+            if data.get('amount', 0) <= 0:
+                raise serializers.ValidationError({
+                    'amount': 'Withdraw amount must be positive'
+                })
+
         return data
 
 
@@ -147,8 +186,8 @@ class PaymentUpdateSerializer(serializers.Serializer):
     )
 
     def validate_amount(self, value):
-        if value and value <= 0:
-            raise serializers.ValidationError("Amount must be greater than zero")
+        if value is not None and value == 0:
+            raise serializers.ValidationError("Amount cannot be zero")
         return value
 
 

@@ -28,6 +28,9 @@ class PaymentStatus(models.TextChoices):
 class PaymentType(models.TextChoices):
     RECEIVED = 'received', 'Received (from Customer)'
     MADE = 'made', 'Made (to Supplier)'
+    CUSTOMER_REFUND = 'customer_refund', 'Refund to Customer'
+    SUPPLIER_REFUND = 'supplier_refund', 'Refund from Supplier'
+    WITHDRAW = 'withdraw', 'Owner Withdraw'
 
 
 class Payment(models.Model):
@@ -85,7 +88,7 @@ class Payment(models.Model):
     amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        help_text="Payment amount")
+        help_text="Payment amount. Positive = receive/pay. Negative = withdraw advance (return money to customer / receive back from supplier)")
 
     date = models.DateField(
         default=timezone.now,
@@ -162,10 +165,24 @@ class Payment(models.Model):
     def __str__(self):
         if self.payment_type == PaymentType.RECEIVED:
             party = self.customer.name if self.customer else 'Unknown'
+            if self.amount < 0:
+                return f"Advance withdrawal to {party} - {self.amount} ({self.payment_method})"
             return f"Payment from {party} - {self.amount} ({self.payment_method})"
-        else:
+        elif self.payment_type == PaymentType.MADE:
             party = self.supplier.name if self.supplier else 'Unknown'
+            if self.amount < 0:
+                return f"Advance withdrawal from {party} - {self.amount} ({self.payment_method})"
             return f"Payment to {party} - {self.amount} ({self.payment_method})"
+        elif self.payment_type == PaymentType.CUSTOMER_REFUND:
+            party = self.customer.name if self.customer else 'Unknown'
+            return f"Refund to {party} - {self.amount} ({self.payment_method})"
+        elif self.payment_type == PaymentType.SUPPLIER_REFUND:
+            party = self.supplier.name if self.supplier else 'Unknown'
+            return f"Refund from {party} - {self.amount} ({self.payment_method})"
+        elif self.payment_type == PaymentType.WITHDRAW:
+            party = self.customer.name if self.customer else 'Owner'
+            return f"Owner withdraw to {party} - {self.amount} ({self.payment_method})"
+        return f"Payment - {self.amount} ({self.payment_method})"
 
     def clean(self):
         """Validate payment data"""
@@ -220,13 +237,103 @@ class Payment(models.Model):
                     'purchase': f'Purchase must belong to company {self.company.name}'
                 })
 
+        elif self.payment_type == PaymentType.CUSTOMER_REFUND:
+            if not self.customer:
+                raise ValidationError({
+                    'customer': 'Customer is required for customer refund'
+                })
+            if self.supplier:
+                raise ValidationError({
+                    'supplier': 'Supplier should not be set for customer refund'
+                })
+            if self.customer and self.customer.company != self.company:
+                raise ValidationError({
+                    'customer': f'Customer must belong to company {self.company.name}'
+                })
+            # Refund = withdrawing advance. Can only refund when customer has negative balance (advance)
+            if self.amount <= 0:
+                raise ValidationError({
+                    'amount': 'Refund amount must be positive'
+                })
+            # Refresh balance from DB
+            self.customer.refresh_from_db()
+            if self.customer.balance >= 0:
+                raise ValidationError({
+                    'amount': 'Customer has no advance balance to refund. Refund is only allowed when customer has negative balance (advance).'
+                })
+            if self.amount > abs(self.customer.balance):
+                raise ValidationError({
+                    'amount': f'Cannot refund more than customer advance. Maximum refund: {abs(self.customer.balance)}'
+                })
+
+        elif self.payment_type == PaymentType.SUPPLIER_REFUND:
+            if not self.supplier:
+                raise ValidationError({
+                    'supplier': 'Supplier is required for supplier refund'
+                })
+            if self.customer:
+                raise ValidationError({
+                    'customer': 'Customer should not be set for supplier refund'
+                })
+            if self.supplier and self.supplier.company != self.company:
+                raise ValidationError({
+                    'supplier': f'Supplier must belong to company {self.company.name}'
+                })
+            # Refund = receiving back advance. Can only receive when supplier has negative balance (advance)
+            if self.amount <= 0:
+                raise ValidationError({
+                    'amount': 'Refund amount must be positive'
+                })
+            self.supplier.refresh_from_db()
+            if self.supplier.balance >= 0:
+                raise ValidationError({
+                    'amount': 'Supplier has no advance balance. Refund is only allowed when supplier has negative balance (we paid in advance).'
+                })
+            if self.amount > abs(self.supplier.balance):
+                raise ValidationError({
+                    'amount': f'Cannot receive refund more than supplier advance. Maximum refund: {abs(self.supplier.balance)}'
+                })
+
+        elif self.payment_type == PaymentType.WITHDRAW:
+            # Owner withdraw - cannot withdraw more than owner's advance (negative balance)
+            if self.amount <= 0:
+                raise ValidationError({
+                    'amount': 'Withdraw amount must be positive'
+                })
+            # Owner must have advance (negative balance) to withdraw
+            if not self.customer:
+                raise ValidationError({
+                    'customer': 'Customer (owner) is required for owner withdraw'
+                })
+            if self.supplier:
+                raise ValidationError({
+                    'supplier': 'Supplier should not be set for owner withdraw'
+                })
+            if self.customer and self.customer.company != self.company:
+                raise ValidationError({
+                    'customer': f'Customer must belong to company {self.company.name}'
+                })
+            self.customer.refresh_from_db()
+            if self.customer.balance >= 0:
+                raise ValidationError({
+                    'amount': 'Owner has no advance balance to withdraw. Withdraw is only allowed when owner has negative balance (advance).'
+                })
+            if self.amount > abs(self.customer.balance):
+                raise ValidationError({
+                    'amount': f'Cannot withdraw more than owner advance. Maximum withdraw: {abs(self.customer.balance)}'
+                })
+
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
 
     def get_party(self):
         """Get the party (customer or supplier) for this payment"""
-        return self.customer if self.payment_type == PaymentType.RECEIVED else self.supplier
+        if self.payment_type in (PaymentType.RECEIVED, PaymentType.CUSTOMER_REFUND, PaymentType.WITHDRAW):
+            return self.customer
+        if self.payment_type in (PaymentType.MADE, PaymentType.SUPPLIER_REFUND):
+            return self.supplier
+        return None
 
     def get_party_name(self):
         """Get the party name"""
