@@ -181,90 +181,6 @@ class SaleAPIView(APIView):
                 "details": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-class SaleTakePaymentAPIView(APIView):
-    """
-    Take payment for a Sale without updating items (safe with SaleReturns).
-    Cash-only for now.
-    """
-
-    def post(self, request, pk):
-        if not hasattr(request, 'company') or not request.company:
-            return Response({
-                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        user = request.user if request.user.is_authenticated else None
-        if not user:
-            return Response({
-                "error": "Authentication required"
-            }, status=status.HTTP_401_UNAUTHORIZED)
-
-        try:
-            amount = Decimal(str(request.data.get('amount', '0')))
-        except Exception:
-            return Response({
-                "error": "Validation error",
-                "details": {"amount": ["Invalid amount"]}
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        if amount <= 0:
-            return Response({
-                "error": "Validation error",
-                "details": {"amount": ["Amount must be greater than zero"]}
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        sale = get_object_or_404(
-            Sale.objects.filter(company=request.company).select_related(
-                'customer', 'company'),
-            pk=pk
-        )
-
-        try:
-            with transaction.atomic():
-                # Apply payment using FIFO logic
-                # This will create payment records and update invoice status
-                payment_date = request.data.get('date') or timezone.now().date()
-                applied_payments = PaymentFIFOService.apply_payment_to_invoices(
-                    payment_amount=amount,
-                    party=sale.customer,
-                    invoice_type='sale',
-                    company=request.company,
-                    user=user,
-                    specific_invoice=sale,
-                    payment_date=payment_date
-                )
-                
-                # Reload sale to get updated status
-                sale.refresh_from_db()
-
-                serializer = SaleSerializer(sale)
-                return Response({
-                    "message": "Payment taken successfully",
-                    "data": serializer.data,
-                    "applied_to_invoices": [
-                        {
-                            "invoice_id": inv.id,
-                            "invoice_number": inv.invoice_number or str(inv.id),
-                            "applied_amount": float(applied_amount)
-                        }
-                        for inv, applied_amount in applied_payments
-                    ]
-                }, status=status.HTTP_200_OK)
-
-        except ValidationError as e:
-            error_details = e.detail if hasattr(e, 'detail') else str(e)
-            return Response({
-                "error": "Validation error",
-                "details": error_details
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response({
-                "error": "Internal server error",
-                "details": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     def put(self, request, pk=None):
         """
         Update an existing sale.
@@ -379,6 +295,90 @@ class SaleTakePaymentAPIView(APIView):
                 "error": "Failed to delete sale",
                 "details": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SaleTakePaymentAPIView(APIView):
+    """
+    Take payment for a Sale without updating items (safe with SaleReturns).
+    Cash-only for now.
+    """
+
+    def post(self, request, pk):
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user if request.user.is_authenticated else None
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            amount = Decimal(str(request.data.get('amount', '0')))
+        except Exception:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Invalid amount"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount <= 0:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Amount must be greater than zero"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        sale = get_object_or_404(
+            Sale.objects.filter(company=request.company).select_related(
+                'customer', 'company'),
+            pk=pk
+        )
+
+        try:
+            with transaction.atomic():
+                # Apply payment using FIFO logic
+                # This will create payment records and update invoice status
+                payment_date = request.data.get('date') or timezone.now().date()
+                applied_payments = PaymentFIFOService.apply_payment_to_invoices(
+                    payment_amount=amount,
+                    party=sale.customer,
+                    invoice_type='sale',
+                    company=request.company,
+                    user=user,
+                    specific_invoice=sale,
+                    payment_date=payment_date
+                )
+                
+                # Reload sale to get updated status
+                sale.refresh_from_db()
+
+                serializer = SaleSerializer(sale)
+                return Response({
+                    "message": "Payment taken successfully",
+                    "data": serializer.data,
+                    "applied_to_invoices": [
+                        {
+                            "invoice_id": inv.id,
+                            "invoice_number": inv.invoice_number or str(inv.id),
+                            "applied_amount": float(applied_amount)
+                        }
+                        for inv, applied_amount in applied_payments
+                    ]
+                }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            error_details = e.detail if hasattr(e, 'detail') else str(e)
+            return Response({
+                "error": "Validation error",
+                "details": error_details
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Internal server error",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class SaleInvoicePDFView(APIView):

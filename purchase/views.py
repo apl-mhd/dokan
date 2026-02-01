@@ -181,89 +181,6 @@ class PurchaseAPIView(APIView):
                 "details": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-class PurchaseTakePaymentAPIView(APIView):
-    """
-    Take payment for a Purchase without updating items.
-    Cash-only for now.
-    """
-
-    def post(self, request, pk):
-        if not hasattr(request, 'company') or not request.company:
-            return Response({
-                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        user = request.user if request.user.is_authenticated else None
-        if not user:
-            return Response({
-                "error": "Authentication required"
-            }, status=status.HTTP_401_UNAUTHORIZED)
-
-        try:
-            amount = Decimal(str(request.data.get('amount', '0')))
-        except Exception:
-            return Response({
-                "error": "Validation error",
-                "details": {"amount": ["Invalid amount"]}
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        if amount <= 0:
-            return Response({
-                "error": "Validation error",
-                "details": {"amount": ["Amount must be greater than zero"]}
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        purchase = get_object_or_404(
-            Purchase.objects.filter(company=request.company).select_related('supplier', 'company'),
-            pk=pk
-        )
-
-        try:
-            with transaction.atomic():
-                # Apply payment using FIFO logic
-                # This will create payment records and update invoice status
-                payment_date = request.data.get('date') or timezone.now().date()
-                applied_payments = PaymentFIFOService.apply_payment_to_invoices(
-                    payment_amount=amount,
-                    party=purchase.supplier,
-                    invoice_type='purchase',
-                    company=request.company,
-                    user=user,
-                    specific_invoice=purchase,
-                    payment_date=payment_date
-                )
-                
-                # Reload purchase to get updated status
-                purchase.refresh_from_db()
-
-                serializer = PurchaseSerializer(purchase)
-                return Response({
-                    "message": "Payment taken successfully",
-                    "data": serializer.data,
-                    "applied_to_invoices": [
-                        {
-                            "invoice_id": inv.id,
-                            "invoice_number": inv.invoice_number or str(inv.id),
-                            "applied_amount": float(applied_amount)
-                        }
-                        for inv, applied_amount in applied_payments
-                    ]
-                }, status=status.HTTP_200_OK)
-
-        except ValidationError as e:
-            error_details = e.detail if hasattr(e, 'detail') else str(e)
-            return Response({
-                "error": "Validation error",
-                "details": error_details
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response({
-                "error": "Internal server error",
-                "details": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     def put(self, request, pk=None):
         """
         Update an existing purchase.
@@ -376,6 +293,89 @@ class PurchaseTakePaymentAPIView(APIView):
                 "error": "Failed to delete purchase",
                 "details": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PurchaseTakePaymentAPIView(APIView):
+    """
+    Take payment for a Purchase without updating items.
+    Cash-only for now.
+    """
+
+    def post(self, request, pk):
+        if not hasattr(request, 'company') or not request.company:
+            return Response({
+                "error": "Company context missing. Please ensure CompanyMiddleware is enabled."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        user = request.user if request.user.is_authenticated else None
+        if not user:
+            return Response({
+                "error": "Authentication required"
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            amount = Decimal(str(request.data.get('amount', '0')))
+        except Exception:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Invalid amount"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount <= 0:
+            return Response({
+                "error": "Validation error",
+                "details": {"amount": ["Amount must be greater than zero"]}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        purchase = get_object_or_404(
+            Purchase.objects.filter(company=request.company).select_related('supplier', 'company'),
+            pk=pk
+        )
+
+        try:
+            with transaction.atomic():
+                # Apply payment using FIFO logic
+                # This will create payment records and update invoice status
+                payment_date = request.data.get('date') or timezone.now().date()
+                applied_payments = PaymentFIFOService.apply_payment_to_invoices(
+                    payment_amount=amount,
+                    party=purchase.supplier,
+                    invoice_type='purchase',
+                    company=request.company,
+                    user=user,
+                    specific_invoice=purchase,
+                    payment_date=payment_date
+                )
+                
+                # Reload purchase to get updated status
+                purchase.refresh_from_db()
+
+                serializer = PurchaseSerializer(purchase)
+                return Response({
+                    "message": "Payment taken successfully",
+                    "data": serializer.data,
+                    "applied_to_invoices": [
+                        {
+                            "invoice_id": inv.id,
+                            "invoice_number": inv.invoice_number or str(inv.id),
+                            "applied_amount": float(applied_amount)
+                        }
+                        for inv, applied_amount in applied_payments
+                    ]
+                }, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            error_details = e.detail if hasattr(e, 'detail') else str(e)
+            return Response({
+                "error": "Validation error",
+                "details": error_details
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                "error": "Internal server error",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class PurchaseInvoicePDFView(APIView):

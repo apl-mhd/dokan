@@ -6,7 +6,7 @@ from django.utils import timezone
 from datetime import timedelta, datetime
 from decimal import Decimal
 from purchase.models import Purchase
-from sale.models import Sale
+from sale.models import Sale, SaleItem
 from inventory.models import Stock, StockTransaction
 from payment.models import Payment, PaymentType, PaymentStatus
 
@@ -100,15 +100,19 @@ class DashboardStatsAPIView(APIView):
         date_from = request.query_params.get('date_from')
         date_to = request.query_params.get('date_to')
         product_ids_param = request.query_params.get('product_ids', '')
-        product_sales_period = request.query_params.get('product_sales_period', period)
-        product_sales_date_from = request.query_params.get('product_sales_date_from')
-        product_sales_date_to = request.query_params.get('product_sales_date_to')
+        product_sales_period = request.query_params.get(
+            'product_sales_period', period)
+        product_sales_date_from = request.query_params.get(
+            'product_sales_date_from')
+        product_sales_date_to = request.query_params.get(
+            'product_sales_date_to')
 
         # Parse product IDs for product_sales filter
         product_ids = []
         if product_ids_param:
             try:
-                product_ids = [int(x.strip()) for x in product_ids_param.split(',') if x.strip()]
+                product_ids = [int(x.strip())
+                               for x in product_ids_param.split(',') if x.strip()]
             except (ValueError, TypeError):
                 pass
 
@@ -237,8 +241,10 @@ class DashboardStatsAPIView(APIView):
         # Product Sales date range (uses own period when product filter is applied)
         if product_ids and (product_sales_date_from and product_sales_date_to and product_sales_period == 'custom'):
             try:
-                ps_start = datetime.strptime(product_sales_date_from, '%Y-%m-%d').date()
-                ps_end = datetime.strptime(product_sales_date_to, '%Y-%m-%d').date()
+                ps_start = datetime.strptime(
+                    product_sales_date_from, '%Y-%m-%d').date()
+                ps_end = datetime.strptime(
+                    product_sales_date_to, '%Y-%m-%d').date()
                 product_sales_date_list = []
                 d = ps_start
                 while d <= ps_end:
@@ -247,7 +253,8 @@ class DashboardStatsAPIView(APIView):
             except ValueError:
                 product_sales_date_list = date_list
         elif product_ids and product_sales_period == 'monthly':
-            product_sales_date_list = [today - timedelta(days=i) for i in range(29, -1, -1)]
+            product_sales_date_list = [
+                today - timedelta(days=i) for i in range(29, -1, -1)]
         else:
             product_sales_date_list = date_list
 
@@ -291,6 +298,25 @@ class DashboardStatsAPIView(APIView):
             }
             for item in product_sales_agg
         ]
+
+        # Product Sales Amount (from SaleItem line_total, filtered by product)
+        product_sales_amount_trend = []
+        if product_ids:
+            for date in product_sales_date_list:
+                daily_amount = SaleItem.objects.filter(
+                    company=company,
+                    product_id__in=product_ids,
+                    sale__invoice_date=date
+                ).aggregate(total=Sum('line_total'))
+                product_sales_amount_trend.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'amount': float(daily_amount['total'] or 0)
+                })
+        else:
+            product_sales_amount_trend = [
+                {'date': d.strftime('%Y-%m-%d'), 'amount': 0.0}
+                for d in product_sales_date_list
+            ]
 
         # Low Stock Items
         low_stock = Stock.objects.filter(
@@ -339,6 +365,7 @@ class DashboardStatsAPIView(APIView):
                 },
                 "product_sales": {
                     "trend": product_sales_trend,
+                    "amount_trend": product_sales_amount_trend,
                     "by_product": product_sales_by_product
                 },
                 "low_stock": list(low_stock)
