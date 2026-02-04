@@ -4,7 +4,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Company, CompanyUser
-from .serializers import CompanySerializer, RegisterSerializer, UserCreateSerializer
+from .serializers import (
+    ChangePasswordSerializer,
+    CompanySerializer,
+    CompanyUpdateSerializer,
+    ProfileSerializer,
+    RegisterSerializer,
+    UserCreateSerializer,
+)
 
 
 class CompanyListCreateView(APIView):
@@ -46,6 +53,76 @@ class RegisterView(APIView):
             {"detail": "Registration successful. You can now log in with your phone number and password."},
             status=status.HTTP_201_CREATED,
         )
+
+
+class ProfileView(APIView):
+    """GET or PATCH current user profile (username, email, first_name, last_name)."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request):
+        serializer = ProfileSerializer(request.user)
+        return Response(serializer.data)
+
+    def patch(self, request):
+        serializer = ProfileSerializer(
+            request.user, data=request.data, partial=True
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class ChangePasswordView(APIView):
+    """POST to change current user password (old_password, new_password)."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data, context={"request": request}
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response({"detail": "Password updated successfully."})
+
+
+class CurrentCompanyView(APIView):
+    """GET or PATCH the current user's company (from request.company)."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def get_company(self, request):
+        if not hasattr(request, "company") or not request.company:
+            return None
+        return request.company
+
+    def get(self, request):
+        company = self.get_company(request)
+        if not company:
+            return Response(
+                {"detail": "No company associated with your account."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = CompanyUpdateSerializer(company)
+        return Response(serializer.data)
+
+    def patch(self, request):
+        company = self.get_company(request)
+        if not company:
+            return Response(
+                {"detail": "No company associated with your account."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = CompanyUpdateSerializer(
+            company, data=request.data, partial=True
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class UserCreateView(APIView):
