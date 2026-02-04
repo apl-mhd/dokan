@@ -42,7 +42,6 @@ jmespath==1.0.1
 lxml==6.0.0
 MarkupSafe==2.1.3
 mccabe==0.7.0
-mysqlclient==2.2.7
 orjson==3.9.10
 oscrypto==1.3.0
 packaging==23.2
@@ -99,3 +98,5 @@ webencodings==0.5.1
 websockets==12.0
 xhtml2pdf==0.2.17
 zopfli==0.4.0
+gunicorn==21.2.0
+whitenoise==6.11.0
