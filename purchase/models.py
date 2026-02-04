@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from supplier.models import Supplier
 from django.utils.timezone import now
@@ -58,11 +59,11 @@ class Purchase(models.Model):
         default=PaymentStatus.UNPAID)
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT)
     created_by = models.ForeignKey(
-        'auth.User',
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='purchase_created_by')
     updated_by = models.ForeignKey(
-        'auth.User',
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='purchase_updated_by',
         null=True,
@@ -143,7 +144,7 @@ class PurchaseReturn(models.Model):
         Warehouse,
         on_delete=models.PROTECT,
         help_text="Warehouse from which items are being returned")
-    
+
     return_number = models.CharField(
         max_length=128,
         unique=True,
@@ -152,7 +153,7 @@ class PurchaseReturn(models.Model):
     return_date = models.DateField(
         default=now,
         help_text="Date of return")
-    
+
     # Financial fields
     sub_total = models.DecimalField(
         max_digits=10,
@@ -172,14 +173,14 @@ class PurchaseReturn(models.Model):
         decimal_places=2,
         default=0.00,
         help_text="Final return amount")
-    
+
     # Refund tracking
     refund_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         default=0.00,
         help_text="Amount refunded to company")
-    
+
     # Status and tracking
     status = models.CharField(
         max_length=20,
@@ -187,7 +188,7 @@ class PurchaseReturn(models.Model):
         default=PurchaseReturnStatus.PENDING)
     completed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
-    
+
     reason = models.TextField(
         blank=True,
         null=True,
@@ -196,14 +197,14 @@ class PurchaseReturn(models.Model):
         blank=True,
         null=True,
         help_text="Additional notes")
-    
+
     # Audit fields
     created_by = models.ForeignKey(
-        'auth.User',
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='purchase_return_created_by')
     updated_by = models.ForeignKey(
-        'auth.User',
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='purchase_return_updated_by',
         null=True,
@@ -238,7 +239,7 @@ class PurchaseReturnItem(models.Model):
         Product,
         on_delete=models.PROTECT,
         help_text="Product being returned")
-    
+
     quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -255,12 +256,12 @@ class PurchaseReturnItem(models.Model):
         max_digits=10,
         decimal_places=2,
         help_text="Total for this line item")
-    
+
     reason = models.TextField(
         blank=True,
         null=True,
         help_text="Specific reason for returning this item")
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -276,12 +277,12 @@ class PurchaseReturnItem(models.Model):
     def clean(self):
         """Validate item data"""
         from django.core.exceptions import ValidationError
-        
+
         if self.purchase_return and self.purchase_return.company != self.company:
             raise ValidationError({
                 'company': f'PurchaseReturnItem company must match PurchaseReturn company'
             })
-        
+
         if self.quantity <= 0:
             raise ValidationError({
                 'quantity': 'Return quantity must be greater than zero'

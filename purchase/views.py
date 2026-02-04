@@ -7,7 +7,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
-from django.contrib.auth.models import User
 from django.db import IntegrityError
 from .services.purchase_service import PurchaseService
 from .services.pdf_service import PurchaseInvoicePDF
@@ -34,11 +33,13 @@ class PurchaseAPIView(APIView):
         if pk:
             active_returns_qs = PurchaseReturn.objects.filter(
                 company=request.company,
-                status__in=[PurchaseReturnStatus.PENDING, PurchaseReturnStatus.COMPLETED]
+                status__in=[PurchaseReturnStatus.PENDING,
+                            PurchaseReturnStatus.COMPLETED]
             ).prefetch_related(
                 Prefetch(
                     'items',
-                    queryset=PurchaseReturnItem.objects.select_related('product', 'unit'),
+                    queryset=PurchaseReturnItem.objects.select_related(
+                        'product', 'unit'),
                     to_attr='active_items'
                 )
             )
@@ -49,7 +50,8 @@ class PurchaseAPIView(APIView):
                 .prefetch_related(
                     Prefetch('items', queryset=PurchaseItem.objects.select_related(
                         'product', 'unit')),
-                    Prefetch('returns', queryset=active_returns_qs, to_attr='active_returns')
+                    Prefetch('returns', queryset=active_returns_qs,
+                             to_attr='active_returns')
                 ),
                 pk=pk
             )
@@ -59,11 +61,13 @@ class PurchaseAPIView(APIView):
             # Get base queryset
             active_returns_qs = PurchaseReturn.objects.filter(
                 company=request.company,
-                status__in=[PurchaseReturnStatus.PENDING, PurchaseReturnStatus.COMPLETED]
+                status__in=[PurchaseReturnStatus.PENDING,
+                            PurchaseReturnStatus.COMPLETED]
             ).prefetch_related(
                 Prefetch(
                     'items',
-                    queryset=PurchaseReturnItem.objects.select_related('product', 'unit'),
+                    queryset=PurchaseReturnItem.objects.select_related(
+                        'product', 'unit'),
                     to_attr='active_items'
                 )
             )
@@ -73,7 +77,8 @@ class PurchaseAPIView(APIView):
             ).prefetch_related(
                 Prefetch('items', queryset=PurchaseItem.objects.select_related(
                     'product', 'unit')),
-                Prefetch('returns', queryset=active_returns_qs, to_attr='active_returns')
+                Prefetch('returns', queryset=active_returns_qs,
+                         to_attr='active_returns')
             )
 
             # Apply search filter
@@ -328,7 +333,8 @@ class PurchaseTakePaymentAPIView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         purchase = get_object_or_404(
-            Purchase.objects.filter(company=request.company).select_related('supplier', 'company'),
+            Purchase.objects.filter(company=request.company).select_related(
+                'supplier', 'company'),
             pk=pk
         )
 
@@ -336,7 +342,8 @@ class PurchaseTakePaymentAPIView(APIView):
             with transaction.atomic():
                 # Apply payment using FIFO logic
                 # This will create payment records and update invoice status
-                payment_date = request.data.get('date') or timezone.now().date()
+                payment_date = request.data.get(
+                    'date') or timezone.now().date()
                 applied_payments = PaymentFIFOService.apply_payment_to_invoices(
                     payment_amount=amount,
                     party=purchase.supplier,
@@ -346,7 +353,7 @@ class PurchaseTakePaymentAPIView(APIView):
                     specific_invoice=purchase,
                     payment_date=payment_date
                 )
-                
+
                 # Reload purchase to get updated status
                 purchase.refresh_from_db()
 
@@ -702,7 +709,7 @@ class PurchaseReturnCompleteAPIView(APIView):
         try:
             from purchase.services.purchase_return_service import PurchaseReturnService
             from purchase.serializers import PurchaseReturnSerializer
-            
+
             purchase_return = PurchaseReturnService.complete_purchase_return(
                 pk, request.company, user)
             serializer = PurchaseReturnSerializer(purchase_return)
@@ -748,7 +755,7 @@ class PurchaseReturnCancelAPIView(APIView):
         try:
             from purchase.services.purchase_return_service import PurchaseReturnService
             from purchase.serializers import PurchaseReturnSerializer
-            
+
             purchase_return = PurchaseReturnService.cancel_purchase_return(
                 pk, request.company, user)
             serializer = PurchaseReturnSerializer(purchase_return)
@@ -787,7 +794,7 @@ class PurchaseReturnableItemsAPIView(APIView):
         try:
             from purchase.services.purchase_return_service import PurchaseReturnService
             import traceback
-            
+
             returnable_items = PurchaseReturnService.get_returnable_items(
                 purchase_id, request.company)
             return Response({

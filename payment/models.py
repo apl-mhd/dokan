@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -138,12 +139,12 @@ class Payment(models.Model):
 
     # Audit fields
     created_by = models.ForeignKey(
-        'auth.User',
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='payment_created_by')
 
     updated_by = models.ForeignKey(
-        'auth.User',
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='payment_updated_by',
         null=True,

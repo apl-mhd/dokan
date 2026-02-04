@@ -138,6 +138,8 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Custom user model for multi-tenant (company-scoped users)
+AUTH_USER_MODEL = 'company.User'
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=5),     # or any duration you want

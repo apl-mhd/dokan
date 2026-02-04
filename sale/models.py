@@ -1,6 +1,4 @@
-from django.db import models
-
-# Create your models here.
+from django.conf import settings
 from django.db import models
 from django.utils.timezone import now
 from customer.models import Customer
@@ -52,9 +50,9 @@ class Sale(models.Model):
         default=PaymentStatus.UNPAID)
 
     created_by = models.ForeignKey(
-        'auth.User', on_delete=models.CASCADE, related_name='sale_created_by')
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sale_created_by')
     updated_by = models.ForeignKey(
-        'auth.User', on_delete=models.CASCADE, related_name='sale_updated_by', null=True, blank=True)
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sale_updated_by', null=True, blank=True)
     status = models.CharField(
         max_length=20, choices=SaleStatus.choices, default=SaleStatus.PENDING)
     notes = models.TextField(null=True, blank=True)
@@ -142,9 +140,9 @@ class SaleReturn(models.Model):
 
     # Timestamps and user tracking
     created_by = models.ForeignKey(
-        'auth.User', on_delete=models.CASCADE, related_name='sale_return_created_by')
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sale_return_created_by')
     updated_by = models.ForeignKey(
-        'auth.User', on_delete=models.CASCADE, related_name='sale_return_updated_by',
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sale_return_updated_by',
         null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)

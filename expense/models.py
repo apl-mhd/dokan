@@ -1,12 +1,13 @@
+from django.conf import settings
 from django.db import models
 from company.models import Company
-from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator
 
 
 class ExpenseCategory(models.Model):
     """Category for grouping expenses (e.g. Rent, Utilities, Salaries)."""
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='expense_categories')
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name='expense_categories')
     name = models.CharField(max_length=100)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -22,7 +23,8 @@ class ExpenseCategory(models.Model):
 
 class Expense(models.Model):
     """Single expense entry linked to a category."""
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='expenses')
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name='expenses')
     category = models.ForeignKey(
         ExpenseCategory,
         on_delete=models.PROTECT,
@@ -36,7 +38,7 @@ class Expense(models.Model):
     date = models.DateField(db_index=True)
     description = models.CharField(max_length=255, blank=True)
     created_by = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

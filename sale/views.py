@@ -8,7 +8,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
-from django.contrib.auth.models import User
 from django.db import IntegrityError
 from .services.sale_service import SaleService
 from .services.sale_return_service import SaleReturnService
@@ -339,7 +338,8 @@ class SaleTakePaymentAPIView(APIView):
             with transaction.atomic():
                 # Apply payment using FIFO logic
                 # This will create payment records and update invoice status
-                payment_date = request.data.get('date') or timezone.now().date()
+                payment_date = request.data.get(
+                    'date') or timezone.now().date()
                 applied_payments = PaymentFIFOService.apply_payment_to_invoices(
                     payment_amount=amount,
                     party=sale.customer,
@@ -349,7 +349,7 @@ class SaleTakePaymentAPIView(APIView):
                     specific_invoice=sale,
                     payment_date=payment_date
                 )
-                
+
                 # Reload sale to get updated status
                 sale.refresh_from_db()
 
