@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import User, Company, CompanyUser
+from warehouse.models import Warehouse
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -66,6 +67,13 @@ class RegisterSerializer(serializers.Serializer):
             email=email or None,
         )
         CompanyUser.objects.create(company=company, user=user)
+        # Create default warehouse for the new company
+        Warehouse.objects.create(
+            company=company,
+            name="Warehouse 1",
+            is_default=True,
+            is_active=True,
+        )
         return user
 
 
