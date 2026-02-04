@@ -134,6 +134,8 @@ class SaleSerializer(serializers.ModelSerializer):
         source='company.phone', read_only=True, allow_blank=True)
     company_email = serializers.CharField(
         source='company.email', read_only=True, allow_blank=True)
+    company_website = serializers.CharField(
+        source='company.website', read_only=True, allow_blank=True)
 
     class Meta:
         model = Sale
