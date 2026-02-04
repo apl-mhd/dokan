@@ -1,0 +1,38 @@
+{
+  "unit_categories": [
+    {
+      "name": "Weight",
+      "units": [
+        {
+          "name": "Kg",
+          "conversion_factor": "1.0000",
+          "is_base_unit": true,
+          "is_default": true
+        },
+        {
+          "name": "25 Kg Sack",
+          "conversion_factor": "25.0000",
+          "is_base_unit": false,
+          "is_default": false
+        }
+      ]
+    },
+    {
+      "name": "Count",
+      "units": [
+        {
+          "name": "Pcs",
+          "conversion_factor": "1.0000",
+          "is_base_unit": true,
+          "is_default": true
+        },
+        {
+          "name": "Dozen",
+          "conversion_factor": "12.0000",
+          "is_base_unit": false,
+          "is_default": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "product_categories": [
+    {
+      "name": "Rice",
+      "description": "All types of rice (Miniket, Nazirshail, Katari, etc.) sold by weight/sacks."
+    },
+    {
+      "name": "Grocery",
+      "description": "Daily staples like Oil, Dal, Sugar, and Spices."
+    },
+    {
+      "name": "Electronics",
+      "description": "Non-weight items like scales, calculators, or lighting equipment."
+    },
+    {
+      "name": "Clothing",
+      "description": "All types of clothing (shirts, pants, dresses, etc.) sold by pieces."
+    }
+  ]
+}

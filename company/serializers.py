@@ -1,8 +1,92 @@
+import json
+from decimal import Decimal
+from pathlib import Path
+
 from rest_framework import serializers
 from .models import User, Company, CompanyUser
 from warehouse.models import Warehouse
 from customer.models import Customer
 from supplier.models import Supplier
+from product.models import UnitCategory, Unit, Category
+
+
+def _create_default_units_for_company(company: Company):
+    """
+    Create default unit categories + units for a newly registered company.
+    Data source: `company/default_units.json`
+    Safe to call multiple times (uses get_or_create/update).
+    """
+    path = Path(__file__).resolve().parent / "default_units.json"
+    if not path.exists():
+        return
+
+    payload = json.loads(path.read_text(encoding="utf-8") or "{}")
+    categories = payload.get("unit_categories") or []
+
+    for cat in categories:
+        cat_name = (cat.get("name") or "").strip()
+        if not cat_name:
+            continue
+        unit_category, _ = UnitCategory.objects.get_or_create(
+            company=company, name=cat_name
+        )
+
+        units = cat.get("units") or []
+        for u in units:
+            unit_name = (u.get("name") or "").strip()
+            if not unit_name:
+                continue
+
+            conversion_factor = Decimal(
+                str(u.get("conversion_factor") or "1.0000"))
+            is_base_unit = bool(u.get("is_base_unit", False))
+            is_default = bool(u.get("is_default", False))
+
+            unit_obj = Unit.objects.filter(
+                company=company, unit_category=unit_category, name=unit_name
+            ).first()
+            if not unit_obj:
+                unit_obj = Unit(
+                    company=company,
+                    unit_category=unit_category,
+                    name=unit_name,
+                )
+
+            unit_obj.conversion_factor = conversion_factor
+            unit_obj.is_base_unit = is_base_unit
+            unit_obj.is_default = is_default
+            unit_obj.is_active = True
+            unit_obj.full_clean()
+            unit_obj.save()
+
+
+def _create_default_product_categories_for_company(company: Company):
+    """
+    Create default product categories for a newly registered company.
+    Data source: `company/default_product_categories.json`
+    Safe to call multiple times (uses get_or_create/update).
+    """
+    path = Path(__file__).resolve().parent / "default_product_categories.json"
+    if not path.exists():
+        return
+
+    payload = json.loads(path.read_text(encoding="utf-8") or "{}")
+    categories = payload.get("product_categories") or []
+
+    for c in categories:
+        name = (c.get("name") or "").strip()
+        if not name:
+            continue
+        description = c.get("description")
+        obj, created = Category.objects.get_or_create(
+            company=company,
+            name=name,
+            defaults={"description": description or None},
+        )
+        if not created:
+            # Keep in sync with JSON (update description)
+            obj.description = description or None
+            obj.save(update_fields=["description"])
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -83,6 +167,8 @@ class RegisterSerializer(serializers.Serializer):
             company=company, name="Walk-in Customer", is_active=True)
         Supplier.objects.create(
             company=company, name="Walk-in Supplier", is_active=True)
+        _create_default_units_for_company(company)
+        _create_default_product_categories_for_company(company)
         return user
 
 
