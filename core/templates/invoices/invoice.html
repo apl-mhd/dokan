@@ -7,7 +7,7 @@
     <style>
       @page {
         size: A4;
-        margin: 20mm;
+        margin: 18mm;
       }
 
       * {
@@ -17,10 +17,10 @@
       }
 
       body {
-        font-family: Arial, Helvetica, sans-serif;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
         font-size: 11px;
-        color: #000;
-        line-height: 1.4;
+        color: #2c3e50;
+        line-height: 1.5;
         background: #fff;
       }
 
@@ -29,135 +29,151 @@
         max-width: 100%;
       }
 
-      /* Header Section */
+      /* Header */
       .header {
-        margin-bottom: 20px;
-        border-bottom: 2px solid #000;
-        padding-bottom: 15px;
-      }
-
-      .header-content {
+        display: table;
         width: 100%;
-        overflow: hidden;
+        margin-bottom: 28px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #1a365d;
       }
 
-      .logo-section {
-        float: left;
-        width: 20%;
+      .header-left {
+        display: table-cell;
+        width: 60%;
         vertical-align: top;
       }
 
-      .logo-placeholder {
-        width: 80px;
-        height: 80px;
-        border: 1px solid #ccc;
-        background: #f5f5f5;
-        text-align: center;
-        line-height: 80px;
-        font-size: 9px;
-        color: #666;
-      }
-
-      .company-info {
-        float: left;
-        width: 75%;
-        padding-left: 15px;
-      }
-
       .company-name {
-        font-size: 18px;
-        font-weight: bold;
-        margin-bottom: 5px;
+        font-size: 22px;
+        font-weight: 700;
+        color: #1a365d;
+        letter-spacing: -0.02em;
+        margin-bottom: 6px;
       }
 
       .company-address {
         font-size: 11px;
-        margin-bottom: 3px;
+        color: #5a6c7d;
+        line-height: 1.5;
+        margin-bottom: 2px;
       }
 
       .company-contact {
         font-size: 11px;
-        margin-top: 5px;
+        color: #5a6c7d;
+        margin-top: 6px;
       }
 
-      /* Invoice Meta Section */
-      .invoice-meta {
-        margin-bottom: 20px;
-        float: right;
-        clear: both;
+      .company-contact + .company-contact {
+        margin-top: 2px;
+      }
+
+      .header-right {
+        display: table-cell;
+        width: 40%;
+        vertical-align: top;
+        text-align: right;
+      }
+
+      .invoice-badge {
+        display: inline-block;
+        font-size: 14px;
+        font-weight: 700;
+        color: #1a365d;
+        letter-spacing: 0.05em;
+        margin-bottom: 12px;
       }
 
       .meta-table {
-        border: 1px solid #000;
         border-collapse: collapse;
-        width: 300px;
+        width: 100%;
+        max-width: 260px;
+        margin-left: auto;
       }
 
       .meta-table td {
-        padding: 6px 10px;
-        border: 1px solid #000;
+        padding: 6px 0;
         font-size: 11px;
+        border-bottom: 1px solid #e8ecf0;
+      }
+
+      .meta-table tr:last-child td {
+        border-bottom: none;
       }
 
       .meta-table td:first-child {
-        font-weight: bold;
-        width: 40%;
-        background: #f5f5f5;
+        color: #5a6c7d;
+        padding-right: 12px;
       }
 
       .meta-table td:last-child {
         text-align: right;
-        width: 60%;
+        font-weight: 500;
+        color: #2c3e50;
       }
 
-      /* Party Information Section */
-      .party-section {
-        margin-bottom: 20px;
+      .clearfix {
         clear: both;
       }
 
+      /* Party block */
+      .party-section {
+        margin-bottom: 24px;
+      }
+
       .party-label {
-        font-weight: bold;
-        font-size: 11.5px;
-        margin-bottom: 5px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #5a6c7d;
+        margin-bottom: 8px;
       }
 
       .party-info {
-        border: 1px solid #000;
-        padding: 10px;
-        width: 100%;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 14px 16px;
+        background: #f8fafc;
       }
 
       .party-name {
-        font-weight: bold;
-        font-size: 11px;
-        margin-bottom: 5px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1a365d;
+        margin-bottom: 4px;
       }
 
       .party-details {
         font-size: 11px;
-        line-height: 1.6;
+        color: #5a6c7d;
+        line-height: 1.5;
       }
 
-      /* Items Table */
+      /* Items table */
       .items-section {
-        margin-bottom: 20px;
+        margin-bottom: 24px;
       }
 
       .items-table {
         width: 100%;
         border-collapse: collapse;
-        border: 1px solid #000;
         font-size: 11px;
       }
 
+      .items-table thead {
+        background: #1a365d;
+        color: #fff;
+      }
+
       .items-table th {
-        background: #f5f5f5;
-        border: 1px solid #000;
-        padding: 8px 5px;
+        padding: 10px 10px;
         text-align: left;
-        font-weight: bold;
-        font-size: 11.5px;
+        font-weight: 600;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
       }
 
       .items-table th:nth-child(1) {
@@ -166,7 +182,7 @@
       }
 
       .items-table th:nth-child(2) {
-        width: 25%;
+        width: 26%;
       }
 
       .items-table th:nth-child(3) {
@@ -182,24 +198,28 @@
         width: 10%;
       }
 
-      .items-table th:nth-child(6) {
+      .items-table th:nth-child(6),
+      .items-table th:nth-child(7) {
         width: 13%;
         text-align: right;
       }
 
-      .items-table th:nth-child(7) {
-        width: 15%;
-        text-align: right;
+      .items-table tbody tr {
+        border-bottom: 1px solid #e8ecf0;
+      }
+
+      .items-table tbody tr:nth-child(even) {
+        background: #f8fafc;
       }
 
       .items-table td {
-        border: 1px solid #000;
-        padding: 6px 5px;
-        font-size: 11px;
+        padding: 10px;
+        color: #2c3e50;
       }
 
       .items-table td:nth-child(1) {
         text-align: center;
+        color: #5a6c7d;
       }
 
       .items-table td:nth-child(4) {
@@ -209,185 +229,209 @@
       .items-table td:nth-child(6),
       .items-table td:nth-child(7) {
         text-align: right;
+        font-variant-numeric: tabular-nums;
       }
 
-      /* Summary Section */
+      .items-table .no-items td {
+        text-align: center;
+        padding: 24px;
+        color: #5a6c7d;
+        background: #f8fafc;
+      }
+
+      /* Summary */
       .summary-section {
-        margin-bottom: 20px;
-        clear: both;
+        margin-bottom: 28px;
       }
 
       .summary-table {
-        width: 350px;
-        border-collapse: collapse;
+        width: 100%;
+        max-width: 320px;
         margin-left: auto;
+        border-collapse: collapse;
+        font-size: 11px;
+      }
+
+      .summary-table tr {
+        border-bottom: 1px solid #e8ecf0;
       }
 
       .summary-table td {
-        padding: 6px 10px;
-        font-size: 11px;
-        border: 1px solid #000;
+        padding: 8px 0;
       }
 
       .summary-table td:first-child {
         text-align: right;
-        font-weight: normal;
-        width: 60%;
-        background: #f5f5f5;
+        padding-right: 16px;
+        color: #5a6c7d;
       }
 
       .summary-table td:last-child {
         text-align: right;
-        width: 40%;
-        font-weight: normal;
+        font-variant-numeric: tabular-nums;
+        min-width: 100px;
       }
 
       .summary-table .grand-total td {
-        font-weight: bold;
-        font-size: 12px;
-        background: #f5f5f5;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #1a365d;
+        border-bottom: 2px solid #1a365d;
       }
 
       .summary-table .due-amount td {
-        border: 2px solid #000;
-        font-weight: bold;
-        background: #f0f0f0;
+        padding-top: 12px;
+        font-weight: 700;
+        color: #c53030;
+        background: #fff5f5;
+        padding: 12px 0;
       }
 
-      /* Footer Section */
+      .summary-table .due-amount td:first-child {
+        background: #fff5f5;
+        padding-right: 16px;
+      }
+
+      /* Footer */
       .footer {
-        margin-top: 30px;
-        border-top: 1px solid #000;
-        padding-top: 15px;
+        margin-top: 32px;
+        padding-top: 20px;
+        border-top: 1px solid #e2e8f0;
       }
 
       .amount-in-words {
-        margin-bottom: 15px;
+        margin-bottom: 16px;
+        padding: 12px 14px;
+        background: #f8fafc;
+        border-radius: 4px;
         font-size: 11px;
       }
 
       .amount-in-words-label {
-        font-weight: bold;
-        margin-bottom: 3px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #5a6c7d;
+        margin-bottom: 4px;
       }
 
       .amount-in-words-value {
         font-style: italic;
+        color: #2c3e50;
       }
 
       .notes-section {
-        margin-bottom: 15px;
+        margin-bottom: 16px;
         font-size: 11px;
+        color: #2c3e50;
       }
 
       .notes-label {
-        font-weight: bold;
-        margin-bottom: 3px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #5a6c7d;
+        margin-bottom: 4px;
       }
 
       .signature-section {
-        margin-top: 40px;
-        margin-bottom: 20px;
+        margin-top: 36px;
       }
 
       .signature-line {
-        border-top: 1px solid #000;
-        width: 250px;
-        margin-top: 50px;
-        padding-top: 5px;
-        font-size: 11px;
-        text-align: center;
+        border-top: 1px solid #cbd5e0;
+        width: 200px;
+        padding-top: 8px;
+        font-size: 10px;
+        color: #5a6c7d;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
       }
 
       .thank-you {
         text-align: center;
-        font-size: 11px;
-        font-style: italic;
-        margin-top: 20px;
-        padding-top: 10px;
-        border-top: 1px solid #ccc;
-      }
-
-      .clearfix {
-        clear: both;
+        font-size: 12px;
+        color: #1a365d;
+        font-weight: 500;
+        margin-top: 24px;
+        padding-top: 16px;
+        border-top: 1px solid #e2e8f0;
       }
     </style>
   </head>
   <body>
     <div class="invoice-container">
-      <!-- Header Section -->
+      <!-- Header -->
       <div class="header">
-        <div class="header-content">
-          {% comment %} <div class="logo-section">
-            <div class="logo-placeholder">LOGO</div>
-          </div> {% endcomment %}
-          <div class="company-info">
-            <div class="company-name">
-              {{ company.name|default:"Company Name" }}
-            </div>
-            <div class="company-address">{{ company.address|default:"" }}</div>
-            {% if company.phone %}
-            <div class="company-contact">Phone: {{ company.phone }}</div>
-            {% endif %} {% if company.email %}
-            <div class="company-contact">Email: {{ company.email }}</div>
-            {% endif %}
+        <div class="header-left">
+          <div class="company-name">
+            {{ company.name|default:"Company Name" }}
           </div>
-        </div>
-      </div>
-
-      <!-- Invoice Meta Information -->
-      <div class="invoice-meta">
-        <table class="meta-table">
-          <tr>
-            <td>Invoice No:</td>
-            <td>{{ invoice.invoice_no|default:"N/A" }}</td>
-          </tr>
-          <tr>
-            <td>Invoice Date:</td>
-            <td>{{ invoice.invoice_date|date:"d M Y"|default:"N/A" }}</td>
-          </tr>
-          {% if invoice.due_date %}
-          <tr>
-            <td>Due Date:</td>
-            <td>{{ invoice.due_date|date:"d M Y" }}</td>
-          </tr>
+          {% if company.address %}
+          <div class="company-address">{{ company.address }}</div>
+          {% endif %} {% if company.phone %}
+          <div class="company-contact">Phone: {{ company.phone }}</div>
+          {% endif %} {% if company.email %}
+          <div class="company-contact">Email: {{ company.email }}</div>
           {% endif %}
-          <tr>
-            <td>Invoice Type:</td>
-            <td>{{ invoice.invoice_type|default:"Sale"|title }}</td>
-          </tr>
-          <tr>
-            <td>Status:</td>
-            <td>{{ invoice.status|default:"Paid" }}</td>
-          </tr>
-        </table>
+        </div>
+        <div class="header-right">
+          <div class="invoice-badge">INVOICE</div>
+          <table class="meta-table">
+            <tr>
+              <td>Invoice No</td>
+              <td>{{ invoice.invoice_no|default:"N/A" }}</td>
+            </tr>
+            <tr>
+              <td>Date</td>
+              <td>{{ invoice.invoice_date|date:"d M Y"|default:"N/A" }}</td>
+            </tr>
+            {% if invoice.due_date %}
+            <tr>
+              <td>Due Date</td>
+              <td>{{ invoice.due_date|date:"d M Y" }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+              <td>Type</td>
+              <td>{{ invoice.invoice_type|default:"Sale"|title }}</td>
+            </tr>
+            <tr>
+              <td>Status</td>
+              <td>{{ invoice.status|default:"Paid" }}</td>
+            </tr>
+          </table>
+        </div>
       </div>
 
       <div class="clearfix"></div>
 
-      <!-- Customer / Supplier Information -->
+      <!-- Party -->
       <div class="party-section">
         <div class="party-label">
-          {% if invoice.invoice_type|lower == "purchase" %}Supplier
-          Information{% else %}Customer Information{% endif %}
+          {% if invoice.invoice_type|lower == "purchase" %}Supplier{% else
+          %}Customer{% endif %}
         </div>
         <div class="party-info">
           <div class="party-name">{{ party.name|default:"N/A" }}</div>
           <div class="party-details">
-             {% if party.address %}{{ party.address }}<br />
-             {% endif %}
-            {% if party.phone %}Phone: {{ party.phone }}{% endif %} 
-            
+            {% if party.address %}{{ party.address }} <br>
+            {% endif %} 
+            {% if party.phone %}Phone: {{ party.phone }}{% endif %}
           </div>
         </div>
       </div>
 
-      <!-- Item Details Table -->
+      <!-- Items -->
       <div class="items-section">
         <table class="items-table">
           <thead>
             <tr>
-              <th>SL</th>
+              <th>#</th>
               <th>Product</th>
               <th>SKU</th>
               <th>Qty</th>
@@ -408,81 +452,81 @@
               <td>৳{{ item.line_total|floatformat:2|default:"0.00" }}</td>
             </tr>
             {% empty %}
-            <tr>
-              <td colspan="7" style="text-align: center; padding: 15px">
-                No items found
-              </td>
+            <tr class="no-items">
+              <td colspan="7">No items</td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
 
-      <!-- Summary / Calculation Section -->
+      <!-- Summary -->
       <div class="summary-section">
         <table class="summary-table">
           <tr>
-            <td>Subtotal:</td>
+            <td>Subtotal</td>
             <td>৳{{ invoice.sub_total|floatformat:2|default:"0.00" }}</td>
           </tr>
           {% if invoice.discount_amount %}
           <tr>
-            <td>Discount:</td>
-            <td>৳{{ invoice.discount_amount|floatformat:2|default:"0.00" }}</td>
+            <td>Discount</td>
+            <td>
+              - ৳{{ invoice.discount_amount|floatformat:2|default:"0.00" }}
+            </td>
           </tr>
           {% endif %} {% if invoice.tax_rate %}
           <tr>
-            <td>Tax ({{ invoice.tax_rate|floatformat:2 }}%):</td>
+            <td>Tax ({{ invoice.tax_rate|floatformat:2 }}%)</td>
             <td>৳{{ invoice.tax_amount|floatformat:2|default:"0.00" }}</td>
           </tr>
           {% elif invoice.tax_amount %}
           <tr>
-            <td>Tax:</td>
+            <td>Tax</td>
             <td>৳{{ invoice.tax_amount|floatformat:2|default:"0.00" }}</td>
           </tr>
           {% endif %} {% if invoice.delivery_charge %}
           <tr>
-            <td>Delivery Charge:</td>
+            <td>Delivery</td>
             <td>৳{{ invoice.delivery_charge|floatformat:2|default:"0.00" }}</td>
           </tr>
           {% endif %}
           <tr class="grand-total">
-            <td>Grand Total:</td>
+            <td>Grand Total</td>
             <td>৳{{ invoice.grand_total|floatformat:2|default:"0.00" }}</td>
           </tr>
           {% if invoice.paid_amount %}
           <tr>
-            <td>Paid Amount:</td>
+            <td>Paid</td>
             <td>৳{{ invoice.paid_amount|floatformat:2|default:"0.00" }}</td>
           </tr>
           {% endif %} {% if invoice.due_amount %}
           <tr class="due-amount">
-            <td>Due Amount:</td>
+            <td>Due</td>
             <td>৳{{ invoice.due_amount|floatformat:2|default:"0.00" }}</td>
           </tr>
           {% endif %}
         </table>
       </div>
 
-      <!-- Footer Section -->
+      <!-- Footer -->
       <div class="footer">
         {% if invoice.amount_in_words %}
         <div class="amount-in-words">
-          <div class="amount-in-words-label">Amount in Words:</div>
+          <div class="amount-in-words-label">Amount in words</div>
           <div class="amount-in-words-value">{{ invoice.amount_in_words }}</div>
         </div>
         {% endif %} {% if invoice.notes %}
         <div class="notes-section">
-          <div class="notes-label">Notes:</div>
+          <div class="notes-label">Notes</div>
           <div>{{ invoice.notes }}</div>
         </div>
         {% endif %}
 
         <div class="signature-section">
-          <div class="signature-line">Authorized Signature</div>
+          <div class="signature-line">Authorized signature</div>
         </div>
 
-        <div class="thank-you">Thank you for your business!</div>
+        <div class="thank-you">Thank you for your business</div>
       </div>
     </div>
   </body>
