@@ -318,9 +318,9 @@
       <!-- Header Section -->
       <div class="header">
         <div class="header-content">
-          <div class="logo-section">
+          {% comment %} <div class="logo-section">
             <div class="logo-placeholder">LOGO</div>
-          </div>
+          </div> {% endcomment %}
           <div class="company-info">
             <div class="company-name">
               {{ company.name|default:"Company Name" }}
@@ -368,19 +368,16 @@
       <!-- Customer / Supplier Information -->
       <div class="party-section">
         <div class="party-label">
-          
-          {% comment %} <p>apel
-            {{invoice.invoice_type}}
-          </p> {% endcomment %}
-          {% comment %} {% if invoice.invoice_type == "purchase" or invoice.invoice_type ==
-          "Purchase" %} Supplier Information: {% else %} Customer Information:
-          {% endif %} {% endcomment %}
+          {% if invoice.invoice_type|lower == "purchase" %}Supplier
+          Information{% else %}Customer Information{% endif %}
         </div>
         <div class="party-info">
           <div class="party-name">{{ party.name|default:"N/A" }}</div>
           <div class="party-details">
-            {% comment %} {% if party.address %}{{ party.address }}<br />{% endif %} {% if
-            party.phone %}Phone: {{ party.phone }}{% endif %} {% endcomment %}
+             {% if party.address %}{{ party.address }}<br />
+             {% endif %}
+            {% if party.phone %}Phone: {{ party.phone }}{% endif %} 
+            
           </div>
         </div>
       </div>

@@ -47,14 +47,14 @@ class SaleInvoicePDF:
         if self.sale.tax and self.sale.sub_total:
             try:
                 from decimal import Decimal
-                if isinstance(self.sale.tax, Decimal) and isinstance(self.sale.sub_total, Decimal):
-                    if self.sale.sub_total > 0:
-                        tax_rate = float(
-                            (self.sale.tax / self.sale.sub_total) * 100)
-                else:
-                    if self.sale.sub_total > 0:
-                        tax_rate = float(
-                            (float(self.sale.tax) / float(self.sale.sub_total)) * 100)
+                sub = self.sale.sub_total
+                tax = self.sale.tax
+                if isinstance(sub, Decimal):
+                    sub = float(sub)
+                if isinstance(tax, Decimal):
+                    tax = float(tax)
+                if sub and sub > 0:
+                    tax_rate = round((tax / sub) * 100, 2)
             except (ZeroDivisionError, TypeError, ValueError) as e:
                 logger.warning(f"Error calculating tax rate: {str(e)}")
                 tax_rate = None
