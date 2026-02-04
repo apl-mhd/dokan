@@ -16,5 +16,7 @@ urlpatterns = [
          name="company-user-detail"),
     path("users/<int:user_id>/profile/", views.CompanyUserProfileView.as_view(),
          name="company-user-profile"),
+    path("users/<int:user_id>/password/", views.CompanyUserPasswordView.as_view(),
+         name="company-user-password"),
     path("users/create/", views.UserCreateView.as_view(), name="user-create"),
 ]

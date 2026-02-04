@@ -254,6 +254,19 @@ class ChangePasswordSerializer(serializers.Serializer):
         return user
 
 
+class CompanyUserSetPasswordSerializer(serializers.Serializer):
+    """Set another user's password (owner/staff only). No complexity rules."""
+
+    new_password = serializers.CharField(
+        max_length=128, write_only=True, style={"input_type": "password"}
+    )
+
+    def validate_new_password(self, value):
+        if not value:
+            raise serializers.ValidationError("New password is required.")
+        return value
+
+
 class CompanySerializer(serializers.ModelSerializer):
     class Meta:
         model = Company

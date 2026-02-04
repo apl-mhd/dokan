@@ -11,6 +11,7 @@ from .serializers import (
     CompanyUserListSerializer,
     CompanyUserUpdateSerializer,
     CompanyUserProfileUpdateSerializer,
+    CompanyUserSetPasswordSerializer,
     ProfileSerializer,
     RegisterSerializer,
     UserCreateSerializer,
@@ -263,6 +264,55 @@ class CompanyUserProfileView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
         return Response(ProfileSerializer(user).data)
+
+
+class CompanyUserPasswordView(APIView):
+    """POST to set a company user's password (owner/staff only)."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, user_id: int):
+        company = getattr(request, "company", None)
+        if not company:
+            return Response(
+                {"detail": "No company associated with your account."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not (
+            request.user.is_staff
+            or request.user.is_superuser
+            or company.owner_id == request.user.id
+        ):
+            return Response(
+                {"detail": "You can only manage users in companies you own."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if company.owner_id == user_id:
+            return Response(
+                {"detail": "You cannot reset the company owner's password here."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            company_user = CompanyUser.objects.select_related("user").get(
+                company=company, user_id=user_id
+            )
+        except CompanyUser.DoesNotExist:
+            return Response(
+                {"detail": "User not found in this company."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = CompanyUserSetPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        company_user.user.set_password(
+            serializer.validated_data["new_password"])
+        company_user.user.save(update_fields=["password"])
+        return Response({"detail": "Password updated successfully."})
 
 
 class UserCreateView(APIView):
