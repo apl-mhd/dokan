@@ -1,4 +1,3 @@
-from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from .models import User, Company, CompanyUser
 from warehouse.models import Warehouse
@@ -63,6 +62,8 @@ class RegisterSerializer(serializers.Serializer):
             is_active=True,
             is_staff=False,  # no Django admin access
         )
+        user.phone = phone
+        user.save(update_fields=["phone"])
         company = Company.objects.create(
             name=name,
             phone=phone,
@@ -85,12 +86,106 @@ class RegisterSerializer(serializers.Serializer):
         return user
 
 
-class ProfileSerializer(serializers.ModelSerializer):
-    """Current user profile: username, email, first_name, last_name."""
+class UserListSerializer(serializers.ModelSerializer):
+    """Read-only list of user fields for company user list."""
 
     class Meta:
         model = User
-        fields = ("id", "username", "email", "first_name", "last_name")
+        fields = ("id", "username", "email",
+                  "phone", "first_name", "last_name")
+        read_only_fields = fields
+
+
+class CompanyUserListSerializer(serializers.ModelSerializer):
+    """Flattened company user list item (includes membership fields)."""
+
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+    phone = serializers.CharField(
+        source="user.phone", read_only=True, allow_null=True)
+    first_name = serializers.CharField(
+        source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
+
+    class Meta:
+        model = CompanyUser
+        fields = (
+            "id",
+            "user_id",
+            "username",
+            "email",
+            "phone",
+            "first_name",
+            "last_name",
+            "is_active",
+        )
+        read_only_fields = fields
+
+
+class CompanyUserUpdateSerializer(serializers.ModelSerializer):
+    """Update membership fields for a user inside a company."""
+
+    class Meta:
+        model = CompanyUser
+        fields = ("is_active",)
+
+
+class CompanyUserProfileUpdateSerializer(serializers.ModelSerializer):
+    """
+    Update a user's profile fields from company owner/staff context.
+    Same uniqueness rules as ProfileSerializer, but works for arbitrary user instance.
+    """
+
+    class Meta:
+        model = User
+        fields = ("username", "email", "phone", "first_name", "last_name")
+
+    def validate_username(self, value):
+        if (
+            User.objects.filter(username=value)
+            .exclude(pk=self.instance.pk)
+            .exists()
+        ):
+            raise serializers.ValidationError(
+                "A user with this username already exists."
+            )
+        return value
+
+    def validate_email(self, value):
+        value = (value or "").strip()
+        if not value:
+            return value
+        if (
+            User.objects.filter(email__iexact=value)
+            .exclude(pk=self.instance.pk)
+            .exists()
+        ):
+            raise serializers.ValidationError(
+                "This email is already registered.")
+        return value
+
+    def validate_phone(self, value):
+        value = (value or "").strip() or None
+        if not value:
+            return value
+        if (
+            User.objects.filter(phone=value)
+            .exclude(pk=self.instance.pk)
+            .exists()
+        ):
+            raise serializers.ValidationError(
+                "This phone number is already in use.")
+        return value
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    """Current user profile: username, email, phone, first_name, last_name."""
+
+    class Meta:
+        model = User
+        fields = ("id", "username", "email",
+                  "phone", "first_name", "last_name")
         read_only_fields = ("id",)
 
     def validate_username(self, value):
@@ -115,6 +210,20 @@ class ProfileSerializer(serializers.ModelSerializer):
         ):
             raise serializers.ValidationError(
                 "This email is already registered."
+            )
+        return value
+
+    def validate_phone(self, value):
+        value = (value or "").strip() or None
+        if not value:
+            return value
+        if (
+            User.objects.filter(phone=value)
+            .exclude(pk=self.instance.pk)
+            .exists()
+        ):
+            raise serializers.ValidationError(
+                "This phone number is already in use."
             )
         return value
 
@@ -188,7 +297,11 @@ class UserCreateSerializer(serializers.Serializer):
     """Create a user with password and assign to a company."""
 
     username = serializers.CharField(max_length=150, write_only=True)
-    email = serializers.EmailField(write_only=True)
+    email = serializers.EmailField(
+        required=False, allow_blank=True, default="", write_only=True
+    )
+    phone = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default="")
     password = serializers.CharField(
         max_length=128, write_only=True, style={"input_type": "password"}
     )
@@ -200,6 +313,13 @@ class UserCreateSerializer(serializers.Serializer):
         queryset=Company.objects.all(), write_only=True
     )
 
+    def validate_phone(self, value):
+        value = (value or "").strip() or None
+        if value and User.objects.filter(phone=value).exists():
+            raise serializers.ValidationError(
+                "This phone number is already in use.")
+        return value
+
     def validate_username(self, value):
         if User.objects.filter(username=value).exists():
             raise serializers.ValidationError(
@@ -207,18 +327,21 @@ class UserCreateSerializer(serializers.Serializer):
         return value
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        value = (value or "").strip()
+        if value and User.objects.filter(email=value).exists():
             raise serializers.ValidationError(
                 "A user with this email already exists.")
-        return value
+        return value or ""
 
     def validate_password(self, value):
-        validate_password(value)
+        if not value:
+            raise serializers.ValidationError("Password is required.")
         return value
 
     def create(self, validated_data):
         company = validated_data.pop("company_id")
         password = validated_data.pop("password")
+        phone = (validated_data.pop("phone", "") or "").strip() or None
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data["email"],
@@ -226,6 +349,9 @@ class UserCreateSerializer(serializers.Serializer):
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),
         )
+        if phone:
+            user.phone = phone
+            user.save(update_fields=["phone"])
         CompanyUser.objects.create(company=company, user=user)
         return user
 

@@ -141,6 +141,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Custom user model for multi-tenant (company-scoped users)
 AUTH_USER_MODEL = 'company.User'
 
+# Login with username, email, or phone
+AUTHENTICATION_BACKENDS = [
+    'company.backend.UsernameEmailPhoneBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=5),     # or any duration you want
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),

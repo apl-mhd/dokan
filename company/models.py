@@ -7,8 +7,10 @@ class User(AbstractUser):
     """
     Custom user model for multi-tenant support.
     Users are linked to companies via CompanyUser.
+    Login can use username, email, or phone.
     """
-    email = models.EmailField(blank=True)  # require email
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         db_table = "company_user"  # avoid clash with join table name
