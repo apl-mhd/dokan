@@ -117,7 +117,8 @@ class SaleSerializer(serializers.ModelSerializer):
     """Serializer for sale output (read operations)"""
     items = SaleItemOutputSerializer(many=True, read_only=True)
     status = serializers.SerializerMethodField()
-    return_status = serializers.SerializerMethodField()  # Keep for backward compatibility but not used in frontend
+    # Keep for backward compatibility but not used in frontend
+    return_status = serializers.SerializerMethodField()
     customer_name = serializers.CharField(
         source='customer.name', read_only=True)
     customer_phone = serializers.CharField(
@@ -127,6 +128,12 @@ class SaleSerializer(serializers.ModelSerializer):
     warehouse_name = serializers.CharField(
         source='warehouse.name', read_only=True)
     company_name = serializers.CharField(source='company.name', read_only=True)
+    company_address = serializers.CharField(
+        source='company.address', read_only=True, allow_blank=True)
+    company_phone = serializers.CharField(
+        source='company.phone', read_only=True, allow_blank=True)
+    company_email = serializers.CharField(
+        source='company.email', read_only=True, allow_blank=True)
 
     class Meta:
         model = Sale
@@ -142,18 +149,18 @@ class SaleSerializer(serializers.ModelSerializer):
         - Otherwise return the original status
         """
         original_status = obj.status
-        
+
         # Only modify status if it's delivered and has returns
         if original_status != SaleStatus.DELIVERED:
             return original_status
-        
+
         return_status = self.get_return_status(obj)
-        
+
         if return_status == 'fully_returned':
             return SaleStatus.RETURNED
         elif return_status == 'partially_returned':
             return SaleStatus.PARTIALLY_RETURNED
-        
+
         return original_status
 
     def get_return_status(self, obj):
@@ -226,16 +233,18 @@ class SaleReturnItemOutputSerializer(serializers.ModelSerializer):
     """Serializer for sale return items in output (read-only)"""
     product_name = serializers.CharField(source='product.name', read_only=True)
     unit_name = serializers.CharField(source='unit.name', read_only=True)
-    sale_item_id = serializers.IntegerField(source='sale_item.id', read_only=True)
-    
+    sale_item_id = serializers.IntegerField(
+        source='sale_item.id', read_only=True)
+
     class Meta:
         model = SaleReturnItem
         fields = [
-            'id', 'sale_item_id', 'product', 'product_name', 
-            'returned_quantity', 'unit', 'unit_name', 'unit_price', 
+            'id', 'sale_item_id', 'product', 'product_name',
+            'returned_quantity', 'unit', 'unit_name', 'unit_price',
             'line_total', 'condition', 'condition_notes', 'created_at'
         ]
-        read_only_fields = ['line_total', 'created_at', 'product_name', 'unit_name']
+        read_only_fields = ['line_total',
+                            'created_at', 'product_name', 'unit_name']
 
 
 class SaleReturnItemInputSerializer(serializers.Serializer):
@@ -250,7 +259,7 @@ class SaleReturnItemInputSerializer(serializers.Serializer):
     )
     condition_notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
-    
+
     def validate_returned_quantity(self, value):
         if value <= 0:
             raise serializers.ValidationError(
@@ -272,25 +281,26 @@ class SaleReturnCreateInputSerializer(serializers.Serializer):
         max_digits=10, decimal_places=2, required=False, default=0.00)
     notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
-    
+
     def validate_items(self, value):
         if not value or len(value) == 0:
             raise serializers.ValidationError("At least one item is required.")
         return value
-    
+
     def validate_tax(self, value):
         if value < 0:
             raise serializers.ValidationError("Tax cannot be negative.")
         return value
-    
+
     def validate_discount(self, value):
         if value < 0:
             raise serializers.ValidationError("Discount cannot be negative.")
         return value
-    
+
     def validate_refunded_amount(self, value):
         if value < 0:
-            raise serializers.ValidationError("Refunded amount cannot be negative.")
+            raise serializers.ValidationError(
+                "Refunded amount cannot be negative.")
         return value
 
 
@@ -308,38 +318,44 @@ class SaleReturnUpdateInputSerializer(serializers.Serializer):
         max_digits=10, decimal_places=2, required=False)
     notes = serializers.CharField(
         required=False, allow_blank=True, allow_null=True)
-    
+
     def validate_items(self, value):
         if not value or len(value) == 0:
             raise serializers.ValidationError("At least one item is required.")
         return value
-    
+
     def validate_tax(self, value):
         if value and value < 0:
             raise serializers.ValidationError("Tax cannot be negative.")
         return value
-    
+
     def validate_discount(self, value):
         if value and value < 0:
             raise serializers.ValidationError("Discount cannot be negative.")
         return value
-    
+
     def validate_refunded_amount(self, value):
         if value and value < 0:
-            raise serializers.ValidationError("Refunded amount cannot be negative.")
+            raise serializers.ValidationError(
+                "Refunded amount cannot be negative.")
         return value
 
 
 class SaleReturnSerializer(serializers.ModelSerializer):
     """Serializer for sale return output (read operations)"""
     items = SaleReturnItemOutputSerializer(many=True, read_only=True)
-    customer_name = serializers.CharField(source='customer.name', read_only=True)
-    customer_phone = serializers.CharField(source='customer.phone', read_only=True)
-    warehouse_name = serializers.CharField(source='warehouse.name', read_only=True)
-    sale_invoice_number = serializers.CharField(source='sale.invoice_number', read_only=True)
+    customer_name = serializers.CharField(
+        source='customer.name', read_only=True)
+    customer_phone = serializers.CharField(
+        source='customer.phone', read_only=True)
+    warehouse_name = serializers.CharField(
+        source='warehouse.name', read_only=True)
+    sale_invoice_number = serializers.CharField(
+        source='sale.invoice_number', read_only=True)
     company_name = serializers.CharField(source='company.name', read_only=True)
-    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
-    
+    created_by_username = serializers.CharField(
+        source='created_by.username', read_only=True)
+
     class Meta:
         model = SaleReturn
         fields = '__all__'
