@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from .models import User, Company, CompanyUser
 from warehouse.models import Warehouse
+from customer.models import Customer
+from supplier.models import Supplier
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -74,6 +76,11 @@ class RegisterSerializer(serializers.Serializer):
             is_default=True,
             is_active=True,
         )
+        # Create walk-in customer and supplier for the new company
+        Customer.objects.create(
+            company=company, name="Walk-in Customer", is_active=True)
+        Supplier.objects.create(
+            company=company, name="Walk-in Supplier", is_active=True)
         return user
 
 
