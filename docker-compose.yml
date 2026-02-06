@@ -11,7 +11,10 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dokan_user}"]
+      # test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dokan_user}"]
+      # Adding the -d flag tells Postgres exactly which database to verify
+      test: ["CMD-SHELL", "pg_isready -d ${POSTGRES_DB:-dokan_db} -U ${POSTGRES_USER:-dokan_user}"]
+      
       interval: 10s
       timeout: 5s
       retries: 5
